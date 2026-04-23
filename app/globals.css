@@ -60,14 +60,16 @@ a {
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: linear-gradient(140deg, var(--brand), var(--brand-2));
-  color: #041019;
+  background: center / cover no-repeat url("/logo-mark.svg");
+  color: transparent;
   font-weight: 800;
-  font-size: 14px;
+  font-size: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 20px rgba(43, 210, 201, 0.35);
+  box-shadow: 0 8px 20px rgba(43, 210, 201, 0.22);
+  overflow: hidden;
+  user-select: none;
 }
 
 .brand-mark .name {

@@ -1,11 +1,25 @@
 {
   "name": "localstack-s3-explorer",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "description": "Dockyard S3 Studio desktop app",
+  "author": "Dockyard S3 Studio",
+  "license": "MIT",
+  "homepage": "https://example.com/dockyard-s3-studio",
+  "main": "electron/main.js",
   "private": true,
   "scripts": {
+    "desktop:icons": "node scripts/generate-icons.mjs",
     "dev": "next dev --webpack",
     "build": "next build --webpack",
-    "start": "next start"
+    "start": "next start",
+    "desktop:dev": "concurrently -k \"npm run dev -- -p 3000\" \"wait-on http://localhost:3000 && electron .\"",
+    "desktop:start": "concurrently -k \"npm run start -- -p 3000\" \"wait-on http://localhost:3000 && electron .\"",
+    "desktop:prod": "npm run build && npm run desktop:start",
+    "desktop:dist:mac": "npm run build && electron-builder --mac dmg",
+    "desktop:dist:mac:dir": "npm run build && electron-builder --mac dir",
+    "desktop:dist:win": "npm run build && electron-builder --win nsis",
+    "desktop:dist:win:portable": "npm run build && electron-builder --win portable",
+    "desktop:dist:win:dir": "npm run build && electron-builder --win dir"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
@@ -16,5 +30,88 @@
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@electron/notarize": "2.5.0",
+    "concurrently": "^9.2.1",
+    "electron": "^37.2.1",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^2.1.8",
+    "sharp": "^0.34.2",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.dockyard.s3studio",
+    "productName": "Dockyard S3 Studio",
+    "copyright": "Copyright © 2026 Dockyard S3 Studio",
+    "artifactName": "${productName}-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "app/**",
+      "config/**",
+      "electron/**",
+      "lib/**",
+      "public/**",
+      "tools/**",
+      ".next/**",
+      "assets/**",
+      "next.config.js",
+      "jsconfig.json",
+      "package.json"
+    ],
+    "asar": false,
+    "afterSign": "electron/notarize.js",
+    "mac": {
+      "icon": "electron/icons/icon.icns",
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.developer-tools",
+      "darkModeSupport": true,
+      "hardenedRuntime": true
+    },
+    "dmg": {
+      "background": "electron/installer/dmg-background.png",
+      "iconSize": 136,
+      "window": {
+        "width": 1200,
+        "height": 800
+      },
+      "contents": [
+        {
+          "x": 840,
+          "y": 390,
+          "type": "link",
+          "path": "/Applications"
+        },
+        {
+          "x": 340,
+          "y": 390,
+          "type": "file"
+        }
+      ]
+    },
+    "win": {
+      "icon": "electron/icons/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "publisherName": "Dockyard S3 Studio"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "electron/icons/icon.ico",
+      "uninstallerIcon": "electron/icons/icon.ico",
+      "installerHeaderIcon": "electron/icons/icon.ico"
+    },
+    "extraMetadata": {
+      "name": "dockyard-s3-studio"
+    }
   }
 }
