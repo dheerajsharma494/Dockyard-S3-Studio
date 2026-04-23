@@ -15,6 +15,14 @@ const spaceMono = Space_Mono({
 export const metadata = {
   title: "Dockyard S3 Studio",
   description: "Modern S3 and LocalStack object management workspace",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/apple-touch-icon.png",
+    shortcut: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({ children }) {

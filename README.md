@@ -69,7 +69,149 @@ App URL:
 npm run dev      # next dev --webpack
 npm run build    # next build --webpack
 npm start        # next start
+npm run desktop:dev    # run as desktop app in dev mode
+npm run desktop:prod   # build + run as desktop app (production web build)
+npm run desktop:icons  # generate desktop icon assets (.png/.icns/.ico)
+npm run desktop:dist:mac      # build macOS .dmg installer in dist/
+npm run desktop:dist:mac:dir  # build unpacked macOS app in dist/
+npm run desktop:dist:win           # build Windows NSIS installer
+npm run desktop:dist:win:portable  # build Windows portable executable
+npm run desktop:dist:win:dir       # build unpacked Windows app directory
 ```
+
+## Desktop App (macOS)
+
+You can run Dockyard S3 Studio as a desktop app using Electron.
+
+```bash
+# Development desktop app
+npm run desktop:dev
+
+# Production desktop app mode (builds Next.js first)
+npm run desktop:prod
+```
+
+Notes:
+
+- The desktop window loads the local web app URL at `http://localhost:3000`.
+- In desktop mode, external links open in your default browser.
+- Packaged builds run an embedded Next.js server on port `3123` by default.
+- Desktop icon assets are generated from `assets/app-icon.svg` into `electron/icons/`.
+- DMG background assets are generated into `electron/installer/`.
+
+### Build a macOS installer (.dmg)
+
+```bash
+npm run desktop:dist:mac
+```
+
+Output:
+
+- DMG installer and app artifacts are generated under `dist/`.
+
+For local testing without DMG packaging:
+
+```bash
+npm run desktop:dist:mac:dir
+```
+
+## Desktop App (Windows)
+
+Windows desktop packaging is also configured through Electron Builder.
+
+```bash
+# Windows installer
+npm run desktop:dist:win
+
+# Windows portable app
+npm run desktop:dist:win:portable
+
+# Unpacked Windows app directory
+npm run desktop:dist:win:dir
+```
+
+Notes:
+
+- Packaged Windows builds use the same embedded Next.js server flow as macOS builds.
+- Building Windows installers from macOS may require additional tooling such as Wine, depending on target type and environment.
+- The most reliable way to produce final Windows artifacts is on a Windows machine or CI runner.
+
+## Code Signing And Notarization
+
+### macOS
+
+For clean distribution outside your own machine, sign and notarize the app with an Apple Developer account.
+
+Typical requirements:
+
+- A valid `Developer ID Application` certificate installed in Keychain
+- Apple Developer Team ID
+- Apple ID with an app-specific password
+
+Common environment variables used during build:
+
+```bash
+export APPLE_ID="your-apple-id@example.com"
+export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export APPLE_TEAM_ID="YOURTEAMID"
+```
+
+Notes:
+
+- Unsigned DMGs will still build, but Gatekeeper will warn on other machines.
+- Notarization is the recommended path for public macOS distribution.
+- Automated notarization is wired through `electron/notarize.js` and runs automatically after signing when the required environment variables are present.
+
+### Windows
+
+For smoother installation and better SmartScreen reputation, sign the Windows installer and executable with an Authenticode certificate.
+
+Common electron-builder variables:
+
+```bash
+export CSC_LINK="/path/to/certificate.p12"
+export CSC_KEY_PASSWORD="your-password"
+```
+
+Notes:
+
+- Unsigned Windows builds still work, but users may see stronger trust warnings.
+- The best place to produce signed Windows artifacts is a Windows CI runner or Windows build host.
+
+## CI Desktop Builds
+
+GitHub Actions workflows are included for both macOS and Windows desktop builds:
+
+- `.github/workflows/desktop-macos.yml`
+- `.github/workflows/desktop-windows.yml`
+
+They run on:
+
+- manual trigger (`workflow_dispatch`)
+- pushed version tags like `v1.0.0`
+
+### GitHub Secrets
+
+For signed and notarized macOS builds, configure:
+
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+- `APPLE_CERTIFICATE_P12`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `KEYCHAIN_PASSWORD`
+
+For signed Windows builds, configure:
+
+- `WIN_CSC_LINK`
+- `WIN_CSC_KEY_PASSWORD`
+
+Secret formats:
+
+- `APPLE_CERTIFICATE_P12` should be base64-encoded `.p12` certificate content.
+- `WIN_CSC_LINK` should be base64-encoded `.p12`/code-signing certificate content.
+
+If signing secrets are omitted, the workflows still build unsigned artifacts.
 
 ## Configuration
 
