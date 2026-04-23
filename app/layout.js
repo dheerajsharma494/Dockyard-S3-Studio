@@ -1,9 +1,28 @@
-export const metadata = { title: "S3 Explorer" };
+import "./globals.css";
+import { Manrope, Space_Mono } from "next/font/google";
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-ui",
+});
+
+const spaceMono = Space_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "700"],
+});
+
+export const metadata = {
+  title: "Dockyard S3 Studio",
+  description: "Modern S3 and LocalStack object management workspace",
+};
 
 export default function RootLayout({ children }) {
   return (
     <html>
-      <body>{children}</body>
+      <body className={`${manrope.variable} ${spaceMono.variable}`}>
+        {children}
+      </body>
     </html>
   );
 }
