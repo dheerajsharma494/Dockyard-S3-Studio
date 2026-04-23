@@ -14,6 +14,11 @@ export default function BucketList({
   const [buckets, setBuckets] = useState([]);
   const [connections, setConnections] = useState([]);
   const [activeConnectionId, setActiveConnectionId] = useState("");
+  const [armedBucket, setArmedBucket] = useState(null);
+  const [pinnedBuckets, setPinnedBuckets] = useState([]);
+  const [showOtherBuckets, setShowOtherBuckets] = useState(false);
+
+  const PINNED_BUCKETS_KEY = "dockyard:pinnedBuckets";
 
   const loadConnections = async () => {
     const res = await fetch("/api/connections");
@@ -37,6 +42,39 @@ export default function BucketList({
     loadConnections().then(() => loadBuckets());
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(PINNED_BUCKETS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setPinnedBuckets(parsed.filter((name) => typeof name === "string"));
+      }
+    } catch {
+      setPinnedBuckets([]);
+    }
+  }, []);
+
+  const persistPinnedBuckets = (nextBuckets) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(PINNED_BUCKETS_KEY, JSON.stringify(nextBuckets));
+  };
+
+  const togglePinnedBucket = (bucketName) => {
+    setPinnedBuckets((prev) => {
+      const exists = prev.includes(bucketName);
+      const next = exists ? prev.filter((name) => name !== bucketName) : [...prev, bucketName];
+      persistPinnedBuckets(next);
+      return next;
+    });
+  };
+
+  const openBucket = (bucketName) => {
+    setArmedBucket(null);
+    onSelect(bucketName);
+  };
+
   const handleConnectionChange = async (id) => {
     setActiveConnectionId(id);
     await fetch("/api/connections/select", {
@@ -45,7 +83,97 @@ export default function BucketList({
       body: JSON.stringify({ id }),
     });
     onConnectionChange?.();
+    setArmedBucket(null);
     await loadBuckets();
+  };
+
+  const pinnedBucketItems = buckets.filter((bucketItem) => pinnedBuckets.includes(bucketItem.Name));
+  const otherBucketItems = buckets.filter((bucketItem) => !pinnedBuckets.includes(bucketItem.Name));
+
+  const renderBucketRow = (b) => {
+    const isPinned = pinnedBuckets.includes(b.Name);
+
+    return (
+      <div
+        key={b.Name}
+        onClick={() => setArmedBucket(b.Name)}
+        onDoubleClick={() => openBucket(b.Name)}
+        title={isCollapsed ? b.Name : undefined}
+        style={{
+          cursor: "pointer",
+          margin: "0 8px 6px",
+          padding: isCollapsed ? "10px 6px" : "10px 12px",
+          fontSize: 13,
+          borderRadius: 10,
+          background: selected === b.Name
+            ? "linear-gradient(135deg, rgba(43, 210, 201, 0.18), rgba(125, 224, 255, 0.14))"
+            : armedBucket === b.Name
+              ? "rgba(43, 210, 201, 0.12)"
+              : "rgba(10, 18, 30, 0.45)",
+          border: selected === b.Name
+            ? "1px solid rgba(43, 210, 201, 0.45)"
+            : armedBucket === b.Name
+              ? "1px solid rgba(43, 210, 201, 0.35)"
+              : "1px solid rgba(146, 184, 224, 0.15)",
+          color: selected === b.Name ? "#c5fffb" : "#bdd3ec",
+          transition: "all 0.15s",
+          wordBreak: "break-all",
+          textAlign: isCollapsed ? "center" : "left",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "flex-start",
+          gap: 8,
+        }}
+        onMouseEnter={(e) => {
+          if (selected !== b.Name && armedBucket !== b.Name) {
+            e.currentTarget.style.background = "rgba(18, 33, 53, 0.85)";
+            e.currentTarget.style.borderColor = "rgba(146, 184, 224, 0.35)";
+          }
+        }}
+        onMouseLeave={(e) => {
+          if (selected !== b.Name && armedBucket !== b.Name) {
+            e.currentTarget.style.background = "rgba(10, 18, 30, 0.45)";
+            e.currentTarget.style.borderColor = "rgba(146, 184, 224, 0.15)";
+          }
+        }}
+      >
+        {!isCollapsed && (
+          <button
+            type="button"
+            title={isPinned ? "Unpin bucket" : "Pin bucket"}
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePinnedBucket(b.Name);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              width: 16,
+              height: 16,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: isPinned ? "#7de0d6" : "#6e89a8",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path
+                d="M5.5 1.5h5L9.8 5v2.1l2 1.6v1.1H4.2V8.7l2-1.6V5L5.5 1.5Z"
+                fill={isPinned ? "currentColor" : "none"}
+                stroke="currentColor"
+                strokeWidth="1.2"
+                strokeLinejoin="round"
+              />
+              <path d="M8 9.8V14.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
+        <span>{isCollapsed ? b.Name.slice(0, 1).toUpperCase() : b.Name}</span>
+      </div>
+    );
   };
 
   return (
@@ -159,40 +287,42 @@ export default function BucketList({
       <div style={{ padding: isCollapsed ? "10px 4px 8px" : "10px 8px 12px", fontSize: 11, color: "#84a5c7", textTransform: "uppercase", letterSpacing: 1, textAlign: isCollapsed ? "center" : "left" }}>
         Buckets
       </div>
-      {buckets.map((b) => (
-        <div
-          key={b.Name}
-          onClick={() => onSelect(b.Name)}
-          title={isCollapsed ? b.Name : undefined}
-          style={{
-            cursor: "pointer",
-            margin: "0 8px 6px",
-            padding: isCollapsed ? "10px 6px" : "10px 12px",
-            fontSize: 13,
-            borderRadius: 10,
-            background: selected === b.Name ? "linear-gradient(135deg, rgba(43, 210, 201, 0.18), rgba(125, 224, 255, 0.14))" : "rgba(10, 18, 30, 0.45)",
-            border: selected === b.Name ? "1px solid rgba(43, 210, 201, 0.45)" : "1px solid rgba(146, 184, 224, 0.15)",
-            color: selected === b.Name ? "#c5fffb" : "#bdd3ec",
-            transition: "all 0.15s",
-            wordBreak: "break-all",
-            textAlign: isCollapsed ? "center" : "left"
-          }}
-          onMouseEnter={(e) => {
-            if (selected !== b.Name) {
-              e.currentTarget.style.background = "rgba(18, 33, 53, 0.85)";
-              e.currentTarget.style.borderColor = "rgba(146, 184, 224, 0.35)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (selected !== b.Name) {
-              e.currentTarget.style.background = "rgba(10, 18, 30, 0.45)";
-              e.currentTarget.style.borderColor = "rgba(146, 184, 224, 0.15)";
-            }
-          }}
-        >
-          {isCollapsed ? b.Name.slice(0, 1).toUpperCase() : b.Name}
-        </div>
-      ))}
+      {isCollapsed ? (
+        buckets.map((b) => renderBucketRow(b))
+      ) : (
+        <>
+          <div style={{ padding: "0 10px 8px", fontSize: 10, color: "#7da2c9", textTransform: "uppercase", letterSpacing: 0.8 }}>
+            Pinned
+          </div>
+          {pinnedBucketItems.length === 0 && (
+            <div style={{ margin: "0 8px 8px", padding: "8px 10px", color: "#6f8fb1", fontSize: 12, border: "1px dashed rgba(146, 184, 224, 0.2)", borderRadius: 8 }}>
+              Pin buckets to keep them on top.
+            </div>
+          )}
+          {pinnedBucketItems.map((b) => renderBucketRow(b))}
+
+          <button
+            type="button"
+            onClick={() => setShowOtherBuckets((prev) => !prev)}
+            style={{
+              margin: "6px 8px 8px",
+              padding: "7px 10px",
+              borderRadius: 8,
+              border: "1px solid rgba(146, 184, 224, 0.22)",
+              background: "rgba(10, 18, 30, 0.7)",
+              color: "#a9c2dc",
+              fontSize: 11,
+              fontWeight: 600,
+              textAlign: "left",
+              cursor: "pointer",
+            }}
+          >
+            {showOtherBuckets ? "Hide other buckets" : `Show other buckets (${otherBucketItems.length})`}
+          </button>
+
+          {showOtherBuckets && otherBucketItems.map((b) => renderBucketRow(b))}
+        </>
+      )}
     </div>
   );
 }

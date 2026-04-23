@@ -1,8 +1,11 @@
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 
-const STORE_FILE = path.join(process.cwd(), ".connections.json");
+const APP_DATA_DIR = path.join(os.homedir(), ".dockyard-s3-studio");
+const STORE_FILE = path.join(APP_DATA_DIR, "connections.json");
+const LEGACY_STORE_FILE = path.join(process.cwd(), ".connections.json");
 
 function makeDefaultLocalstackConnection() {
   return {
@@ -22,6 +25,15 @@ async function readStoreFile() {
     const content = await fs.readFile(STORE_FILE, "utf8");
     return JSON.parse(content);
   } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+  }
+
+  try {
+    const content = await fs.readFile(LEGACY_STORE_FILE, "utf8");
+    return JSON.parse(content);
+  } catch (error) {
     if (error.code === "ENOENT") {
       return null;
     }
@@ -30,6 +42,7 @@ async function readStoreFile() {
 }
 
 async function writeStoreFile(store) {
+  await fs.mkdir(APP_DATA_DIR, { recursive: true });
   await fs.writeFile(STORE_FILE, JSON.stringify(store, null, 2), "utf8");
 }
 

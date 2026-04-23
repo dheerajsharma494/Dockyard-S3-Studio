@@ -40,10 +40,18 @@ export default function FileExplorer({ bucket }) {
   const [previewVideoUrl, setPreviewVideoUrl] = useState(null);
   const [previewExcelData, setPreviewExcelData] = useState(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+  const previewPdfObjectUrlRef = useRef(null);
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
   const uploadAbortControllersRef = useRef([]);
   const uploadCancelRequestedRef = useRef(false);
+
+  const clearPreviewPdfObjectUrl = () => {
+    if (previewPdfObjectUrlRef.current) {
+      URL.revokeObjectURL(previewPdfObjectUrlRef.current);
+      previewPdfObjectUrlRef.current = null;
+    }
+  };
 
   const prefix = history[history.length - 1] ?? "";
 
@@ -215,6 +223,7 @@ export default function FileExplorer({ bucket }) {
 
   const openPreview = async (file) => {
     if (file.isFolder) return;
+    clearPreviewPdfObjectUrl();
     setPreviewFile(file);
     setPreviewLoading(true);
     setPreviewError(null);
@@ -236,7 +245,16 @@ export default function FileExplorer({ bucket }) {
       if (data.type === "excel") {
         setPreviewExcelData({ sheets: data.sheets, sheetNames: data.sheetNames });
       } else if (data.type === "pdf") {
-        setPreviewPdfUrl(data.streamUrl || data.pdfUrl);
+        const pdfRes = await fetch(
+          `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(file.key)}&inline=1&contentType=${encodeURIComponent("application/pdf")}`,
+        );
+        if (!pdfRes.ok) {
+          throw new Error("Failed to load PDF content");
+        }
+        const pdfBlob = await pdfRes.blob();
+        const objectUrl = URL.createObjectURL(pdfBlob);
+        previewPdfObjectUrlRef.current = objectUrl;
+        setPreviewPdfUrl(objectUrl);
       } else if (data.type === "video") {
         setPreviewVideoUrl(data.streamUrl || data.videoUrl);
       } else if (data.imageUrl) {
@@ -252,6 +270,7 @@ export default function FileExplorer({ bucket }) {
   };
 
   const closePreview = () => {
+    clearPreviewPdfObjectUrl();
     setPreviewFile(null);
     setPreviewLoading(false);
     setPreviewError(null);
@@ -261,6 +280,12 @@ export default function FileExplorer({ bucket }) {
     setPreviewExcelData(null);
     setPreviewPdfUrl(null);
   };
+
+  useEffect(() => {
+    return () => {
+      clearPreviewPdfObjectUrl();
+    };
+  }, []);
 
   const submitActionModal = async () => {
     if (!actionModal?.onSubmit || actionModal.busy) return;
@@ -361,6 +386,15 @@ export default function FileExplorer({ bucket }) {
         return;
       }
 
+      if (action === "details") {
+        openResultModal({
+          title: "Folder Details",
+          content: `Name: ${item.label}\nPath: ${item.fullName}\nType: Folder\nBucket: ${bucket}`,
+          copyText: item.fullName,
+        });
+        return;
+      }
+
       if (action === "rename") {
         openActionModal({
           title: "Rename Folder",
@@ -447,6 +481,20 @@ export default function FileExplorer({ bucket }) {
 
     if (action === "download") {
       window.open(`/api/download?bucket=${bucket}&key=${encodeURIComponent(item.fullName)}`, "_blank");
+      return;
+    }
+
+    if (action === "preview") {
+      await openPreview(item);
+      return;
+    }
+
+    if (action === "details") {
+      openResultModal({
+        title: "File Details",
+        content: `Name: ${item.label}\nKey: ${item.fullName}\nType: ${item.type || "File"}\nSize: ${item.sizeLabel || formatBytes(item.sizeRaw || 0)}\nModified: ${item.modifiedLabel || "-"}\nStorage Class: ${item.storageClass || "STANDARD"}\nBucket: ${bucket}`,
+        copyText: item.fullName,
+      });
       return;
     }
 
@@ -2155,8 +2203,8 @@ export default function FileExplorer({ bucket }) {
         >
           {(
             menuState.item?.isFolder
-              ? ["open", "rename", "copy", "delete"]
-              : ["download", "signedUrl", "archiveStatus", "restoreArchive", "metadata", "tags", "rename", "bin", "delete", "share", "copy"]
+              ? ["open", "details", "rename", "copy", "delete"]
+              : ["preview", "details", "download", "signedUrl", "archiveStatus", "restoreArchive", "metadata", "tags", "rename", "bin", "delete", "share", "copy"]
           ).map((action) => (
             <button
               key={action}
@@ -2173,7 +2221,7 @@ export default function FileExplorer({ bucket }) {
                 cursor: "pointer"
               }}
             >
-              {action === "open" ? "Open Folder" : action === "rename" && menuState.item?.isFolder ? "Rename Folder" : action === "bin" ? "Move to bin" : action === "metadata" ? "Edit Metadata" : action === "signedUrl" ? "Copy Signed URL" : action === "archiveStatus" ? "Archive Status" : action === "restoreArchive" ? "Restore Archive" : action === "tags" ? "Edit Tags" : action.charAt(0).toUpperCase() + action.slice(1)}
+              {action === "open" ? "Open Folder" : action === "preview" ? "Preview" : action === "details" ? "Details" : action === "rename" && menuState.item?.isFolder ? "Rename Folder" : action === "bin" ? "Move to bin" : action === "metadata" ? "Edit Metadata" : action === "signedUrl" ? "Copy Signed URL" : action === "archiveStatus" ? "Archive Status" : action === "restoreArchive" ? "Restore Archive" : action === "tags" ? "Edit Tags" : action.charAt(0).toUpperCase() + action.slice(1)}
             </button>
           ))}
         </div>

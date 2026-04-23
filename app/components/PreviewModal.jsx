@@ -26,6 +26,9 @@ function parseCSV(text) {
 export default function PreviewModal({ isOpen, file, onClose, isLoading, error, content, imageUrl, videoUrl, excelData, pdfUrl, theme = "dark", bucket = "" }) {
   const isLightTheme = theme === "light";
   const [activeSheet, setActiveSheet] = useState(0);
+  const [pdfPages, setPdfPages] = useState([]);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState(null);
   const videoRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [videoDuration, setVideoDuration] = useState(0);
@@ -40,6 +43,77 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
     setVideoVolume(1);
     setIsMuted(false);
   }, [videoUrl]);
+
+  useEffect(() => {
+    let active = true;
+
+    const renderPdfPages = async () => {
+      if (!pdfUrl) {
+        setPdfPages([]);
+        setPdfLoading(false);
+        setPdfError(null);
+        return;
+      }
+
+      setPdfLoading(true);
+      setPdfError(null);
+      setPdfPages([]);
+
+      try {
+        const pdfjsModule = await import("pdfjs-dist/legacy/build/pdf.js");
+        const pdfjs = pdfjsModule?.default || pdfjsModule;
+        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+
+        const res = await fetch(pdfUrl);
+        if (!res.ok) {
+          throw new Error("Failed to fetch PDF content");
+        }
+
+        const buffer = await res.arrayBuffer();
+        const doc = await pdfjs.getDocument({
+          data: new Uint8Array(buffer),
+        }).promise;
+
+        const renderedPages = [];
+
+        for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
+          const page = await doc.getPage(pageNumber);
+          const baseViewport = page.getViewport({ scale: 1 });
+          const targetWidth = 980;
+          const scale = Math.min(2, Math.max(1, targetWidth / baseViewport.width));
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d", { alpha: false });
+
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          await page.render({
+            canvasContext: ctx,
+            viewport,
+          }).promise;
+
+          renderedPages.push(canvas.toDataURL("image/png"));
+        }
+
+        if (active) {
+          setPdfPages(renderedPages);
+          setPdfLoading(false);
+        }
+      } catch (err) {
+        if (active) {
+          setPdfError(err.message || "Failed to render PDF preview");
+          setPdfLoading(false);
+        }
+      }
+    };
+
+    renderPdfPages();
+
+    return () => {
+      active = false;
+    };
+  }, [pdfUrl]);
 
   const formatTime = (seconds) => {
     if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
@@ -192,7 +266,7 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
               style={{
                 width: "100%",
                 height: "100%",
-                minHeight: "70vh",
+                minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
                 background: "#000",
@@ -210,7 +284,8 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
                 onPause={() => setIsPlaying(false)}
                 style={{
                   width: "100%",
-                  height: "100%",
+                  height: "auto",
+                  maxHeight: "calc(92vh - 210px)",
                   flex: 1,
                   objectFit: "contain",
                   background: "#000",
@@ -339,17 +414,41 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
               }}
             />
           ) : pdfUrl ? (
-            <iframe
-              src={pdfUrl}
+            <div
               style={{
                 width: "100%",
-                height: "100%",
                 minHeight: "70vh",
-                border: "none",
-                borderRadius: 4,
+                padding: "12px",
+                boxSizing: "border-box",
               }}
-              title={file.label}
-            />
+            >
+              {pdfLoading ? (
+                <div style={{ textAlign: "center", color: isLightTheme ? "#4d6e92" : "#8fb6d8", padding: "18px" }}>
+                  Rendering PDF preview...
+                </div>
+              ) : pdfError ? (
+                <div style={{ textAlign: "center", color: isLightTheme ? "#7d2730" : "#ff8a8a", padding: "18px" }}>
+                  {pdfError}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+                  {pdfPages.map((pageImage, idx) => (
+                    <img
+                      key={`pdf-page-${idx + 1}`}
+                      src={pageImage}
+                      alt={`PDF page ${idx + 1}`}
+                      style={{
+                        width: "100%",
+                        maxWidth: 980,
+                        height: "auto",
+                        borderRadius: 4,
+                        boxShadow: isLightTheme ? "0 4px 14px rgba(20, 41, 70, 0.15)" : "0 4px 14px rgba(0, 0, 0, 0.35)",
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
           ) : excelData ? (
             <div style={{ width: "100%", display: "flex", flexDirection: "column" }}>
               {/* Sheet tabs */}

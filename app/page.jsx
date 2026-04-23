@@ -8,6 +8,15 @@ export default function Home() {
   const [isSmallScreen, setIsSmallScreen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const collapseTimerRef = useRef(null);
+  const SELECTED_BUCKET_KEY = "dockyard:selectedBucket";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedBucket = window.localStorage.getItem(SELECTED_BUCKET_KEY);
+    if (savedBucket) {
+      setBucket(savedBucket);
+    }
+  }, []);
 
   useEffect(() => {
     const onResize = () => {
@@ -28,6 +37,15 @@ export default function Home() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (bucket) {
+      window.localStorage.setItem(SELECTED_BUCKET_KEY, bucket);
+    } else {
+      window.localStorage.removeItem(SELECTED_BUCKET_KEY);
+    }
+  }, [bucket]);
 
   const openSidebarTemporarily = () => {
     setIsSidebarCollapsed(false);

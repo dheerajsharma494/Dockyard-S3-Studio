@@ -68,20 +68,32 @@ export async function GET(req) {
       key.match(/\.(txt|log|md|csv|json|xml|html)$/i);
     const documentType = DOCUMENT_TYPES[contentType] || null;
 
-    // Stream large media/documents directly instead of buffering as base64.
-    if (isVideo || isPDF) {
-      const streamUrl = `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&inline=1`;
+    // Stream large videos directly instead of buffering.
+    if (isVideo) {
+      const streamUrl = `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&inline=1&contentType=${encodeURIComponent(contentType)}`;
       return Response.json({
         key,
         contentLength: data.ContentLength,
         contentType,
-        type: isVideo ? "video" : "pdf",
+        type: "video",
         streamUrl,
         lastModified: data.LastModified,
       });
     }
 
     // Check content length for formats that are buffered in memory.
+    if (isPDF && data.ContentLength > maxSize) {
+      const streamUrl = `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&inline=1&contentType=${encodeURIComponent("application/pdf")}`;
+      return Response.json({
+        key,
+        contentLength: data.ContentLength,
+        contentType,
+        type: "pdf",
+        streamUrl,
+        lastModified: data.LastModified,
+      });
+    }
+
     if (data.ContentLength > maxSize) {
       return Response.json(
         {
@@ -95,6 +107,23 @@ export async function GET(req) {
 
     // Convert Body to bytes
     const buffer = await data.Body.transformToByteArray();
+
+    const isPdfSignature =
+      buffer.length >= 5 &&
+      Buffer.from(buffer.slice(0, 5)).toString("ascii") === "%PDF-";
+
+    if (isPDF || isPdfSignature) {
+      const base64 = Buffer.from(buffer).toString("base64");
+      const dataUrl = `data:application/pdf;base64,${base64}`;
+      return Response.json({
+        key,
+        contentLength: data.ContentLength,
+        contentType: "application/pdf",
+        type: "pdf",
+        pdfUrl: dataUrl,
+        lastModified: data.LastModified,
+      });
+    }
 
     // Handle image files
     if (isImage) {
