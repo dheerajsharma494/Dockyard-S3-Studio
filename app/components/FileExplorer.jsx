@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import TreeNode from "./TreeNode";
 import MetadataModal from "./MetadataModal";
+import PreviewModal from "./PreviewModal";
 
 const MULTIPART_THRESHOLD = 100 * 1024 * 1024;
 const MULTIPART_PART_SIZE = 10 * 1024 * 1024;
@@ -31,6 +32,14 @@ export default function FileExplorer({ bucket }) {
   const [resolvedTheme, setResolvedTheme] = useState("dark");
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const [isPhoneLayout, setIsPhoneLayout] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(null);
+  const [previewContent, setPreviewContent] = useState(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState(null);
+  const [previewVideoUrl, setPreviewVideoUrl] = useState(null);
+  const [previewExcelData, setPreviewExcelData] = useState(null);
+  const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
   const uploadAbortControllersRef = useRef([]);
@@ -202,6 +211,55 @@ export default function FileExplorer({ bucket }) {
       ...prev,
       values: { ...prev.values, [name]: value },
     }));
+  };
+
+  const openPreview = async (file) => {
+    if (file.isFolder) return;
+    setPreviewFile(file);
+    setPreviewLoading(true);
+    setPreviewError(null);
+    setPreviewContent(null);
+    setPreviewImageUrl(null);
+    setPreviewVideoUrl(null);
+    setPreviewExcelData(null);
+    setPreviewPdfUrl(null);
+
+    try {
+      const res = await fetch(`/api/preview?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(file.key)}`);
+      const data = await res.json();
+      
+      if (!res.ok) {
+        setPreviewError(data.error || "Failed to load preview");
+        return;
+      }
+      
+      if (data.type === "excel") {
+        setPreviewExcelData({ sheets: data.sheets, sheetNames: data.sheetNames });
+      } else if (data.type === "pdf") {
+        setPreviewPdfUrl(data.pdfUrl);
+      } else if (data.videoUrl) {
+        setPreviewVideoUrl(data.videoUrl);
+      } else if (data.imageUrl) {
+        setPreviewImageUrl(data.imageUrl);
+      } else if (data.content) {
+        setPreviewContent(data.content);
+      }
+    } catch (error) {
+      setPreviewError(error.message || "Failed to load preview");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewFile(null);
+    setPreviewLoading(false);
+    setPreviewError(null);
+    setPreviewContent(null);
+    setPreviewImageUrl(null);
+    setPreviewVideoUrl(null);
+    setPreviewExcelData(null);
+    setPreviewPdfUrl(null);
   };
 
   const submitActionModal = async () => {
@@ -1834,6 +1892,7 @@ export default function FileExplorer({ bucket }) {
                         item={item}
                         viewMode="list"
                         onOpen={(target) => navigateTo(target.fullName)}
+                        onPreview={openPreview}
                         onContextMenu={openContextMenu}
                         selected={selectedKeys.includes(item.fullName)}
                         onToggleSelect={toggleSelect}
@@ -1859,6 +1918,7 @@ export default function FileExplorer({ bucket }) {
                         item={item}
                         viewMode="grid"
                         onOpen={(target) => navigateTo(target.fullName)}
+                        onPreview={openPreview}
                         onContextMenu={openContextMenu}
                         selected={selectedKeys.includes(item.fullName)}
                         onToggleSelect={toggleSelect}
@@ -1881,7 +1941,7 @@ export default function FileExplorer({ bucket }) {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(14, 20, 35, 0.42)",
+            background: isLightTheme ? "rgba(0, 0, 0, 0.3)" : "rgba(14, 20, 35, 0.42)",
             zIndex: 1200,
             display: "flex",
             alignItems: "center",
@@ -1895,20 +1955,20 @@ export default function FileExplorer({ bucket }) {
               width: "min(680px, 100%)",
               maxHeight: "80vh",
               overflowY: "auto",
-              background: "#fff",
+              background: isLightTheme ? "#f8fcff" : "#0c1625",
               borderRadius: 12,
-              border: "1px solid #d7dff0",
-              boxShadow: "0 22px 50px rgba(14, 30, 62, 0.22)",
+              border: isLightTheme ? "1px solid rgba(180, 199, 222, 0.75)" : "1px solid rgba(146, 184, 224, 0.2)",
+              boxShadow: isLightTheme ? "0 22px 50px rgba(14, 30, 62, 0.15)" : "0 22px 50px rgba(0, 0, 0, 0.3)",
               padding: 18,
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 16, color: "#1c2b4b" }}>{actionModal.title}</h3>
+              <h3 style={{ margin: 0, fontSize: 16, color: isLightTheme ? "#142946" : "#e6f2ff" }}>{actionModal.title}</h3>
               <button
                 type="button"
                 onClick={closeActionModal}
-                style={{ border: "none", background: "none", cursor: "pointer", fontSize: 20, color: "#dc2626", padding: "0", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}
+                style={{ border: "none", background: "none", cursor: "pointer", fontSize: 20, color: isLightTheme ? "#dc2626" : "#ff8a8a", padding: "0", width: "24px", height: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}
               >
                 ✕
               </button>
@@ -1916,18 +1976,19 @@ export default function FileExplorer({ bucket }) {
 
             {actionModal.fields.map((field) => (
               <label key={field.name} style={{ display: "block", marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: "#4f5f7f", marginBottom: 4 }}>{field.label}</div>
+                <div style={{ fontSize: 12, color: isLightTheme ? "#4d6e92" : "#8fb6d8", marginBottom: 4 }}>{field.label}</div>
                 {field.type === "select" ? (
                   <select
                     value={actionModal.values[field.name] ?? ""}
                     onChange={(e) => setModalValue(field.name, e.target.value)}
                     style={{
                       width: "100%",
-                      border: "1px solid #d0d5e8",
+                      border: isLightTheme ? "1px solid rgba(180, 199, 222, 0.75)" : "1px solid rgba(146, 184, 224, 0.3)",
                       borderRadius: 6,
                       padding: "8px 10px",
                       fontSize: 13,
-                      background: "#fff",
+                      background: isLightTheme ? "#ffffff" : "rgba(18, 32, 52, 0.8)",
+                      color: isLightTheme ? "#203a5d" : "#dcecff",
                     }}
                   >
                     <option value="">{field.placeholder || "Select..."}</option>
@@ -1946,19 +2007,19 @@ export default function FileExplorer({ bucket }) {
                       placeholder="Select a folder..."
                       style={{
                         flex: 1,
-                        border: "1px solid #d0d5e8",
+                        border: isLightTheme ? "1px solid rgba(180, 199, 222, 0.75)" : "1px solid rgba(146, 184, 224, 0.3)",
                         borderRadius: 6,
                         padding: "8px 10px",
                         fontSize: 13,
-                        background: "#f9fafb",
-                        color: "#666",
+                        background: isLightTheme ? "#f9fafb" : "rgba(18, 32, 52, 0.6)",
+                        color: isLightTheme ? "#666" : "#8fb6d8",
                       }}
                     />
                     <button
                       type="button"
                       onClick={() => field.folderPickerRef?.current?.click()}
                       style={{
-                        border: "1px solid #d0d5e8",
+                        border: isLightTheme ? "1px solid rgba(180, 199, 222, 0.75)" : "1px solid rgba(146, 184, 224, 0.3)",
                         borderRadius: 6,
                         padding: "8px 12px",
                         fontSize: 12,
@@ -1985,11 +2046,12 @@ export default function FileExplorer({ bucket }) {
                     onChange={(e) => setModalValue(field.name, e.target.value)}
                     style={{
                       width: "100%",
-                      border: "1px solid #d0d5e8",
+                      border: isLightTheme ? "1px solid rgba(180, 199, 222, 0.75)" : "1px solid rgba(146, 184, 224, 0.3)",
                       borderRadius: 6,
                       padding: "8px 10px",
                       fontSize: 13,
-                      background: "#fff",
+                      background: isLightTheme ? "#ffffff" : "rgba(18, 32, 52, 0.8)",
+                      color: isLightTheme ? "#203a5d" : "#dcecff",
                     }}
                   />
                 )}
@@ -1997,23 +2059,23 @@ export default function FileExplorer({ bucket }) {
             ))}
 
             {actionModal.error && (
-              <div style={{ color: "#d43d3d", fontSize: 12, marginBottom: 10, padding: "8px 10px", background: "#fff5f5", borderRadius: 4, border: "1px solid #fdd" }}>{actionModal.error}</div>
+              <div style={{ color: isLightTheme ? "#7d2730" : "#ff8a8a", fontSize: 12, marginBottom: 10, padding: "8px 10px", background: isLightTheme ? "#fff5f5" : "rgba(220, 53, 69, 0.12)", borderRadius: 4, border: isLightTheme ? "1px solid #fdd" : "1px solid rgba(220, 53, 69, 0.3)" }}>{actionModal.error}</div>
             )}
 
             {actionModal.content && (
               <div style={{ marginTop: 8, marginBottom: 10 }}>
-                <div style={{ fontSize: 12, color: "#4f5f7f", marginBottom: 6 }}>Content</div>
+                <div style={{ fontSize: 12, color: isLightTheme ? "#4f5f7f" : "#8fb6d8", marginBottom: 6 }}>Content</div>
                 <pre
                   style={{
                     margin: 0,
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
-                    background: "#f4f7ff",
-                    border: "1px solid #d7dff0",
+                    background: isLightTheme ? "#f4f7ff" : "rgba(18, 32, 52, 0.8)",
+                    border: isLightTheme ? "1px solid #d7dff0" : "1px solid rgba(146, 184, 224, 0.2)",
                     borderRadius: 8,
                     padding: 10,
                     fontSize: 12,
-                    color: "#1d2a45",
+                    color: isLightTheme ? "#1d2a45" : "#dcecff",
                     maxHeight: 260,
                     overflow: "auto",
                   }}
@@ -2031,9 +2093,9 @@ export default function FileExplorer({ bucket }) {
                     await navigator.clipboard.writeText(actionModal.copyText);
                   }}
                   style={{
-                    border: "1px solid #2f7f63",
-                    background: "#fff",
-                    color: "#2f7f63",
+                    border: isLightTheme ? "1px solid #2f7f63" : "1px solid rgba(43, 210, 201, 0.4)",
+                    background: isLightTheme ? "#fff" : "transparent",
+                    color: isLightTheme ? "#2f7f63" : "#2bd2c9",
                     borderRadius: 6,
                     padding: "8px 12px",
                     fontSize: 12,
@@ -2051,7 +2113,7 @@ export default function FileExplorer({ bucket }) {
                   onClick={submitActionModal}
                   style={{
                     border: "none",
-                    background: actionModal.busy ? "#adc2ef" : "#4f8ef7",
+                    background: actionModal.busy ? (isLightTheme ? "#adc2ef" : "rgba(79, 142, 247, 0.5)") : "#4f8ef7",
                     color: "#fff",
                     borderRadius: 6,
                     padding: "8px 12px",
@@ -2108,6 +2170,21 @@ export default function FileExplorer({ bucket }) {
           ))}
         </div>
       )}
+
+      <PreviewModal
+        isOpen={Boolean(previewFile)}
+        file={previewFile}
+        onClose={closePreview}
+        isLoading={previewLoading}
+        error={previewError}
+        content={previewContent}
+        imageUrl={previewImageUrl}
+        videoUrl={previewVideoUrl}
+        excelData={previewExcelData}
+        pdfUrl={previewPdfUrl}
+        theme={resolvedTheme}
+        bucket={bucket}
+      />
 
       <MetadataModal
         isOpen={metadataModalOpen}

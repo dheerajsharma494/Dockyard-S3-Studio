@@ -79,7 +79,7 @@ function ItemIcon({ isFolder, size = "sm", isLightTheme = false }) {
   );
 }
 
-export default function TreeNode({ item, viewMode, onOpen, onContextMenu, selected, onToggleSelect, theme = "dark", compact = false, phone = false }) {
+export default function TreeNode({ item, viewMode, onOpen, onPreview, onContextMenu, selected, onToggleSelect, theme = "dark", compact = false, phone = false }) {
   const isLightTheme = theme === "light";
 
   if (viewMode === "grid") {
@@ -121,13 +121,20 @@ export default function TreeNode({ item, viewMode, onOpen, onContextMenu, select
         </div>
         <div
           title={item.label}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (!item.isFolder && onPreview) {
+              onPreview(item);
+            }
+          }}
           style={{
             fontSize: compact ? (phone ? 13 : 14) : 20,
             fontWeight: 600,
             color: isLightTheme ? "#142946" : "#e6f2ff",
             overflow: "hidden",
             textOverflow: "ellipsis",
-            whiteSpace: "nowrap"
+            whiteSpace: "nowrap",
+            cursor: !item.isFolder ? "pointer" : "default",
           }}
         >
           {item.label}
@@ -179,7 +186,21 @@ export default function TreeNode({ item, viewMode, onOpen, onContextMenu, select
         <div style={{ minWidth: 0 }}>
           <span
             title={item.label}
-            style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isLightTheme ? "#203a5d" : "#dcecff", fontSize: phone ? 12 : 13 }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (!item.isFolder && onPreview) {
+                onPreview(item);
+              }
+            }}
+            style={{ 
+              display: "block", 
+              overflow: "hidden", 
+              textOverflow: "ellipsis", 
+              whiteSpace: "nowrap", 
+              color: isLightTheme ? "#203a5d" : "#dcecff", 
+              fontSize: phone ? 12 : 13,
+              cursor: !item.isFolder ? "pointer" : "default",
+            }}
           >
             {item.label}
           </span>

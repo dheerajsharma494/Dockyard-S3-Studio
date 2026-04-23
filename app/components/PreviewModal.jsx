@@ -1,0 +1,390 @@
+'use client';
+import { useState } from 'react';
+
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+  return lines.map(line => {
+    const cols = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (ch === "," && !inQuotes) {
+        cols.push(current); current = "";
+      } else {
+        current += ch;
+      }
+    }
+    cols.push(current);
+    return cols;
+  });
+}
+
+export default function PreviewModal({ isOpen, file, onClose, isLoading, error, content, imageUrl, videoUrl, excelData, pdfUrl, theme = "dark", bucket = "" }) {
+  const isLightTheme = theme === "light";
+  const [activeSheet, setActiveSheet] = useState(0);
+
+  if (!isOpen || !file) return null;
+
+  const isCSV = file.label?.toLowerCase().endsWith(".csv");
+  const csvRows = isCSV && content ? parseCSV(content) : null;
+  const sheetRows = excelData ? excelData.sheets[excelData.sheetNames[activeSheet]] : null;
+  const isPDF = Boolean(pdfUrl);
+
+  const formatBytes = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0, 0, 0, 0.6)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: isLightTheme ? "#f8fcff" : "#0c1625",
+          borderRadius: 12,
+          boxShadow: "0 20px 60px rgba(0, 0, 0, 0.3)",
+          display: "flex",
+          flexDirection: "column",
+          width: "90%",
+          maxWidth: (excelData || isPDF) ? "1200px" : "900px",
+          maxHeight: isPDF ? "92vh" : "85vh",
+          maxHeight: "85vh",
+          overflow: "hidden",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "20px 24px",
+            borderBottom: isLightTheme ? "1px solid rgba(188, 206, 226, 0.75)" : "1px solid rgba(146, 184, 224, 0.16)",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              title={file.label}
+              style={{
+                fontSize: 18,
+                fontWeight: 600,
+                color: isLightTheme ? "#142946" : "#e6f2ff",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                marginBottom: 4,
+              }}
+            >
+              {file.label}
+            </div>
+            <div style={{ fontSize: 12, color: isLightTheme ? "#4d6e92" : "#8fb6d8" }}>
+              {formatBytes(file.sizeRaw)} • {file.type} • {new Date(file.modifiedRaw).toLocaleString()}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              color: isLightTheme ? "#4d6e92" : "#8fb6d8",
+              fontSize: 24,
+              cursor: "pointer",
+              padding: "4px 8px",
+              marginLeft: 16,
+              flexShrink: 0,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Content */}
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            overflowX: "auto",
+            padding: (csvRows || excelData || isPDF) ? "0" : "20px 24px",
+            minHeight: 0,
+            display: "flex",
+            alignItems: (isLoading || error || (!csvRows && !excelData && !isPDF)) ? "center" : "flex-start",
+            justifyContent: (isLoading || error || (!csvRows && !excelData && !isPDF)) ? "center" : "flex-start",
+          }}
+        >
+          {isLoading ? (
+            <div style={{ textAlign: "center", color: isLightTheme ? "#4d6e92" : "#8fb6d8" }}>
+              Loading preview...
+            </div>
+          ) : error ? (
+            <div
+              style={{
+                padding: "20px",
+                borderRadius: 8,
+                background: isLightTheme ? "rgba(220, 53, 69, 0.1)" : "rgba(220, 53, 69, 0.15)",
+                border: isLightTheme ? "1px solid rgba(220, 53, 69, 0.3)" : "1px solid rgba(220, 53, 69, 0.4)",
+                color: isLightTheme ? "#7d2730" : "#ff8a8a",
+                maxWidth: "400px",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>⚠️ Cannot preview file</div>
+              <div style={{ fontSize: 13, marginBottom: 16 }}>{error}</div>
+              <button
+                onClick={() => {
+                  const url = `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(file.key)}`;
+                  window.location.href = url;
+                }}
+                style={{
+                  background: isLightTheme ? "#2f7f63" : "rgba(43, 210, 201, 0.3)",
+                  color: isLightTheme ? "#fff" : "#2bd2c9",
+                  border: isLightTheme ? "none" : "1px solid rgba(43, 210, 201, 0.5)",
+                  borderRadius: 6,
+                  padding: "8px 16px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                📥 Download File
+              </button>
+            </div>
+          ) : videoUrl ? (
+            <video
+              src={videoUrl}
+              controls
+              autoPlay
+              style={{
+                maxWidth: "100%",
+                maxHeight: "100%",
+                borderRadius: 4,
+              }}
+            />
+          ) : imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={file.label}
+              style={{
+                maxWidth: "100%",
+                maxHeight: "100%",
+                objectFit: "contain",
+                borderRadius: 4,
+              }}
+            />
+          ) : pdfUrl ? (
+            <iframe
+              src={pdfUrl}
+              style={{
+                width: "100%",
+                height: "100%",
+                minHeight: "70vh",
+                border: "none",
+                borderRadius: 4,
+              }}
+              title={file.label}
+            />
+          ) : excelData ? (
+            <div style={{ width: "100%", display: "flex", flexDirection: "column" }}>
+              {/* Sheet tabs */}
+              {excelData.sheetNames.length > 1 && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 4,
+                    padding: "8px 12px 0",
+                    borderBottom: isLightTheme ? "1px solid rgba(188, 206, 226, 0.75)" : "1px solid rgba(146, 184, 224, 0.16)",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {excelData.sheetNames.map((name, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setActiveSheet(i)}
+                      style={{
+                        padding: "5px 12px",
+                        fontSize: 12,
+                        fontWeight: activeSheet === i ? 700 : 400,
+                        cursor: "pointer",
+                        border: "none",
+                        borderRadius: "4px 4px 0 0",
+                        background: activeSheet === i
+                          ? (isLightTheme ? "#fff" : "#0c1625")
+                          : (isLightTheme ? "rgba(188, 206, 226, 0.3)" : "rgba(146, 184, 224, 0.08)"),
+                        color: activeSheet === i
+                          ? (isLightTheme ? "#142946" : "#e6f2ff")
+                          : (isLightTheme ? "#4d6e92" : "#8fb6d8"),
+                        borderBottom: activeSheet === i
+                          ? (isLightTheme ? "2px solid #2f7f63" : "2px solid #2bd2c9")
+                          : "2px solid transparent",
+                      }}
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Sheet table */}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontFamily: '"SF Mono", Monaco, "Inconsolata", monospace' }}>
+                  <thead>
+                    <tr>
+                      {(sheetRows[0] || []).map((cell, i) => (
+                        <th
+                          key={i}
+                          style={{
+                            padding: "8px 12px",
+                            textAlign: "left",
+                            fontWeight: 700,
+                            color: isLightTheme ? "#142946" : "#e6f2ff",
+                            background: isLightTheme ? "rgba(188, 206, 226, 0.4)" : "rgba(146, 184, 224, 0.12)",
+                            borderBottom: isLightTheme ? "2px solid rgba(188, 206, 226, 0.75)" : "2px solid rgba(146, 184, 224, 0.3)",
+                            borderRight: isLightTheme ? "1px solid rgba(188, 206, 226, 0.5)" : "1px solid rgba(146, 184, 224, 0.15)",
+                            whiteSpace: "nowrap",
+                            position: "sticky",
+                            top: 0,
+                            zIndex: 1,
+                          }}
+                        >
+                          {String(cell)}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sheetRows.slice(1) || []).map((row, ri) => (
+                      <tr
+                        key={ri}
+                        style={{
+                          background: ri % 2 !== 0
+                            ? (isLightTheme ? "rgba(188, 206, 226, 0.15)" : "rgba(146, 184, 224, 0.05)")
+                            : "transparent",
+                        }}
+                      >
+                        {(sheetRows[0] || []).map((_, ci) => (
+                          <td
+                            key={ci}
+                            style={{
+                              padding: "6px 12px",
+                              color: isLightTheme ? "#203a5d" : "#dcecff",
+                              borderBottom: isLightTheme ? "1px solid rgba(188, 206, 226, 0.3)" : "1px solid rgba(146, 184, 224, 0.08)",
+                              borderRight: isLightTheme ? "1px solid rgba(188, 206, 226, 0.3)" : "1px solid rgba(146, 184, 224, 0.08)",
+                              maxWidth: 200,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                            title={String(row[ci] ?? "")}
+                          >
+                            {String(row[ci] ?? "")}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : csvRows ? (
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                fontSize: 12,
+                fontFamily: '"SF Mono", Monaco, "Inconsolata", monospace',
+              }}
+            >
+              <thead>
+                <tr>
+                  {csvRows[0].map((cell, i) => (
+                    <th
+                      key={i}
+                      style={{
+                        padding: "8px 12px",
+                        textAlign: "left",
+                        fontWeight: 700,
+                        color: isLightTheme ? "#142946" : "#e6f2ff",
+                        background: isLightTheme ? "rgba(188, 206, 226, 0.4)" : "rgba(146, 184, 224, 0.12)",
+                        borderBottom: isLightTheme ? "2px solid rgba(188, 206, 226, 0.75)" : "2px solid rgba(146, 184, 224, 0.3)",
+                        borderRight: isLightTheme ? "1px solid rgba(188, 206, 226, 0.5)" : "1px solid rgba(146, 184, 224, 0.15)",
+                        whiteSpace: "nowrap",
+                        position: "sticky",
+                        top: 0,
+                        zIndex: 1,
+                      }}
+                    >
+                      {cell}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {csvRows.slice(1).map((row, ri) => (
+                  <tr
+                    key={ri}
+                    style={{
+                      background: ri % 2 === 0
+                        ? (isLightTheme ? "transparent" : "transparent")
+                        : (isLightTheme ? "rgba(188, 206, 226, 0.15)" : "rgba(146, 184, 224, 0.05)"),
+                    }}
+                  >
+                    {row.map((cell, ci) => (
+                      <td
+                        key={ci}
+                        style={{
+                          padding: "6px 12px",
+                          color: isLightTheme ? "#203a5d" : "#dcecff",
+                          borderBottom: isLightTheme ? "1px solid rgba(188, 206, 226, 0.3)" : "1px solid rgba(146, 184, 224, 0.08)",
+                          borderRight: isLightTheme ? "1px solid rgba(188, 206, 226, 0.3)" : "1px solid rgba(146, 184, 224, 0.08)",
+                          maxWidth: 200,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={cell}
+                      >
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : content ? (
+            <pre
+              style={{
+                width: "100%",
+                margin: 0,
+                padding: 0,
+                fontFamily: '"SF Mono", Monaco, "Inconsolata", monospace',
+                fontSize: 12,
+                lineHeight: 1.5,
+                color: isLightTheme ? "#203a5d" : "#dcecff",
+                overflowX: "auto",
+                whiteSpace: "pre-wrap",
+                wordWrap: "break-word",
+              }}
+            >
+              {content}
+            </pre>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
