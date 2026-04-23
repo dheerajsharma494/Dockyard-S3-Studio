@@ -236,9 +236,9 @@ export default function FileExplorer({ bucket }) {
       if (data.type === "excel") {
         setPreviewExcelData({ sheets: data.sheets, sheetNames: data.sheetNames });
       } else if (data.type === "pdf") {
-        setPreviewPdfUrl(data.pdfUrl);
-      } else if (data.videoUrl) {
-        setPreviewVideoUrl(data.videoUrl);
+        setPreviewPdfUrl(data.streamUrl || data.pdfUrl);
+      } else if (data.type === "video") {
+        setPreviewVideoUrl(data.streamUrl || data.videoUrl);
       } else if (data.imageUrl) {
         setPreviewImageUrl(data.imageUrl);
       } else if (data.content) {
@@ -1872,6 +1872,14 @@ export default function FileExplorer({ bucket }) {
                           type="checkbox"
                           checked={isAllCurrentPageSelected}
                           onChange={(e) => toggleSelectCurrentPage(e.target.checked)}
+                          style={{
+                            width: 16,
+                            height: 16,
+                            transform: "scale(1.15)",
+                            transformOrigin: "left center",
+                            cursor: "pointer",
+                            accentColor: isLightTheme ? "#2f7f63" : "#2bd2c9",
+                          }}
                         />
                       </span>
                       <span>Name</span>

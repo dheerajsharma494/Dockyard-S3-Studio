@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
@@ -26,6 +26,34 @@ function parseCSV(text) {
 export default function PreviewModal({ isOpen, file, onClose, isLoading, error, content, imageUrl, videoUrl, excelData, pdfUrl, theme = "dark", bucket = "" }) {
   const isLightTheme = theme === "light";
   const [activeSheet, setActiveSheet] = useState(0);
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+  const [videoVolume, setVideoVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+
+  useEffect(() => {
+    setIsPlaying(false);
+    setVideoDuration(0);
+    setVideoCurrentTime(0);
+    setVideoVolume(1);
+    setIsMuted(false);
+  }, [videoUrl]);
+
+  const formatTime = (seconds) => {
+    if (!Number.isFinite(seconds) || seconds < 0) return "00:00";
+    const total = Math.floor(seconds);
+    const mins = Math.floor(total / 60);
+    const secs = total % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
+
+  const formatBytes = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   if (!isOpen || !file) return null;
 
@@ -33,12 +61,7 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
   const csvRows = isCSV && content ? parseCSV(content) : null;
   const sheetRows = excelData ? excelData.sheets[excelData.sheetNames[activeSheet]] : null;
   const isPDF = Boolean(pdfUrl);
-
-  const formatBytes = (bytes) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
+  const isVideo = Boolean(videoUrl);
 
   return (
     <div
@@ -61,9 +84,8 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
           display: "flex",
           flexDirection: "column",
           width: "90%",
-          maxWidth: (excelData || isPDF) ? "1200px" : "900px",
-          maxHeight: isPDF ? "92vh" : "85vh",
-          maxHeight: "85vh",
+          maxWidth: (excelData || isPDF || isVideo) ? "1200px" : "900px",
+          maxHeight: (isPDF || isVideo) ? "92vh" : "85vh",
           overflow: "hidden",
         }}
         onClick={(e) => e.stopPropagation()}
@@ -121,11 +143,11 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
             flex: 1,
             overflowY: "auto",
             overflowX: "auto",
-            padding: (csvRows || excelData || isPDF) ? "0" : "20px 24px",
+            padding: (csvRows || excelData || isPDF || isVideo) ? "0" : "20px 24px",
             minHeight: 0,
             display: "flex",
-            alignItems: (isLoading || error || (!csvRows && !excelData && !isPDF)) ? "center" : "flex-start",
-            justifyContent: (isLoading || error || (!csvRows && !excelData && !isPDF)) ? "center" : "flex-start",
+            alignItems: (isLoading || error || (!csvRows && !excelData && !isPDF && !isVideo)) ? "center" : "flex-start",
+            justifyContent: (isLoading || error || (!csvRows && !excelData && !isPDF && !isVideo)) ? "center" : "flex-start",
           }}
         >
           {isLoading ? (
@@ -166,16 +188,145 @@ export default function PreviewModal({ isOpen, file, onClose, isLoading, error, 
               </button>
             </div>
           ) : videoUrl ? (
-            <video
-              src={videoUrl}
-              controls
-              autoPlay
+            <div
               style={{
-                maxWidth: "100%",
-                maxHeight: "100%",
-                borderRadius: 4,
+                width: "100%",
+                height: "100%",
+                minHeight: "70vh",
+                display: "flex",
+                flexDirection: "column",
+                background: "#000",
               }}
-            />
+            >
+              <video
+                ref={videoRef}
+                src={videoUrl}
+                controls
+                playsInline
+                preload="metadata"
+                onLoadedMetadata={(e) => setVideoDuration(e.currentTarget.duration || 0)}
+                onTimeUpdate={(e) => setVideoCurrentTime(e.currentTarget.currentTime || 0)}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  flex: 1,
+                  objectFit: "contain",
+                  background: "#000",
+                }}
+              />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "auto minmax(140px, 1fr) auto auto minmax(80px, 120px) auto",
+                  gap: 10,
+                  alignItems: "center",
+                  padding: "10px 12px",
+                  background: isLightTheme ? "rgba(20, 41, 70, 0.08)" : "rgba(9, 16, 28, 0.9)",
+                  borderTop: isLightTheme ? "1px solid rgba(188, 206, 226, 0.5)" : "1px solid rgba(146, 184, 224, 0.2)",
+                }}
+              >
+                <button
+                  onClick={() => {
+                    const el = videoRef.current;
+                    if (!el) return;
+                    if (el.paused) {
+                      el.play().catch(() => {});
+                    } else {
+                      el.pause();
+                    }
+                  }}
+                  style={{
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    background: isLightTheme ? "#2f7f63" : "rgba(43, 210, 201, 0.25)",
+                    color: isLightTheme ? "#fff" : "#d8fffb",
+                    fontWeight: 600,
+                  }}
+                >
+                  {isPlaying ? "Pause" : "Play"}
+                </button>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={videoDuration || 0}
+                  step={0.1}
+                  value={Math.min(videoCurrentTime, videoDuration || 0)}
+                  onChange={(e) => {
+                    const el = videoRef.current;
+                    if (!el) return;
+                    const next = Number(e.target.value);
+                    el.currentTime = next;
+                    setVideoCurrentTime(next);
+                  }}
+                  style={{ width: "100%", cursor: "pointer" }}
+                />
+
+                <span style={{ fontSize: 12, color: isLightTheme ? "#203a5d" : "#dcecff", whiteSpace: "nowrap" }}>
+                  {formatTime(videoCurrentTime)} / {formatTime(videoDuration)}
+                </span>
+
+                <button
+                  onClick={() => {
+                    const el = videoRef.current;
+                    if (!el) return;
+                    const nextMuted = !isMuted;
+                    el.muted = nextMuted;
+                    setIsMuted(nextMuted);
+                  }}
+                  style={{
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "6px 10px",
+                    fontSize: 12,
+                    cursor: "pointer",
+                    background: isLightTheme ? "rgba(47, 127, 99, 0.15)" : "rgba(43, 210, 201, 0.18)",
+                    color: isLightTheme ? "#1f5f4a" : "#cafff6",
+                    fontWeight: 600,
+                  }}
+                >
+                  {isMuted ? "Unmute" : "Mute"}
+                </button>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={isMuted ? 0 : videoVolume}
+                  onChange={(e) => {
+                    const el = videoRef.current;
+                    if (!el) return;
+                    const next = Number(e.target.value);
+                    el.volume = next;
+                    el.muted = next === 0;
+                    setIsMuted(next === 0);
+                    setVideoVolume(next);
+                  }}
+                  style={{ width: "100%", cursor: "pointer" }}
+                />
+
+                <a
+                  href={videoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    textDecoration: "none",
+                    color: isLightTheme ? "#1f5f4a" : "#7de0d6",
+                  }}
+                >
+                  Open in new tab
+                </a>
+              </div>
+            </div>
           ) : imageUrl ? (
             <img
               src={imageUrl}

@@ -114,9 +114,31 @@ export default function TreeNode({ item, viewMode, onOpen, onPreview, onContextM
             onToggleSelect?.(item, e.target.checked);
           }}
           onClick={(e) => e.stopPropagation()}
-          style={{ marginBottom: 10, alignSelf: "flex-start" }}
+          style={{
+            marginBottom: 10,
+            alignSelf: "flex-start",
+            width: 18,
+            height: 18,
+            cursor: "pointer",
+            accentColor: isLightTheme ? "#2f7f63" : "#2bd2c9",
+          }}
         />
-        <div style={{ marginBottom: compact ? 8 : 12, flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (!item.isFolder && onPreview) {
+              onPreview(item);
+            }
+          }}
+          style={{
+            marginBottom: compact ? 8 : 12,
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: !item.isFolder ? "pointer" : "default",
+          }}
+        >
           <ItemIcon isFolder={item.isFolder} size={compact ? "lg" : "xl"} isLightTheme={isLightTheme} />
         </div>
         <div
@@ -178,11 +200,28 @@ export default function TreeNode({ item, viewMode, onOpen, onPreview, onContextM
             onToggleSelect?.(item, e.target.checked);
           }}
           onClick={(e) => e.stopPropagation()}
-          style={phone ? { transform: "scale(0.92)" } : undefined}
+          style={{
+            width: 16,
+            height: 16,
+            transform: phone ? "scale(1.08)" : "scale(1.2)",
+            transformOrigin: "left center",
+            cursor: "pointer",
+            accentColor: isLightTheme ? "#2f7f63" : "#2bd2c9",
+          }}
         />
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-        <ItemIcon isFolder={item.isFolder} isLightTheme={isLightTheme} />
+        <span
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (!item.isFolder && onPreview) {
+              onPreview(item);
+            }
+          }}
+          style={{ display: "inline-flex", cursor: !item.isFolder ? "pointer" : "default" }}
+        >
+          <ItemIcon isFolder={item.isFolder} isLightTheme={isLightTheme} />
+        </span>
         <div style={{ minWidth: 0 }}>
           <span
             title={item.label}

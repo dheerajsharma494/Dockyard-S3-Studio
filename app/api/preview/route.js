@@ -45,7 +45,7 @@ export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const bucket = searchParams.get("bucket");
   const key = searchParams.get("key");
-  const maxSize = 50 * 1024 * 1024; // 50MB limit for preview
+  const maxSize = 50 * 1024 * 1024; // 50MB limit for buffered previews
 
   try {
     const data = await s3.send(
@@ -54,18 +54,6 @@ export async function GET(req) {
         Key: key,
       }),
     );
-
-    // Check content length
-    if (data.ContentLength > maxSize) {
-      return Response.json(
-        {
-          error: "File too large for preview",
-          contentLength: data.ContentLength,
-          maxSize: maxSize,
-        },
-        { status: 413 },
-      );
-    }
 
     const contentType = data.ContentType || "application/octet-stream";
     const isImage = IMAGE_TYPES.some((type) => contentType.includes(type));
@@ -80,6 +68,31 @@ export async function GET(req) {
       key.match(/\.(txt|log|md|csv|json|xml|html)$/i);
     const documentType = DOCUMENT_TYPES[contentType] || null;
 
+    // Stream large media/documents directly instead of buffering as base64.
+    if (isVideo || isPDF) {
+      const streamUrl = `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}&inline=1`;
+      return Response.json({
+        key,
+        contentLength: data.ContentLength,
+        contentType,
+        type: isVideo ? "video" : "pdf",
+        streamUrl,
+        lastModified: data.LastModified,
+      });
+    }
+
+    // Check content length for formats that are buffered in memory.
+    if (data.ContentLength > maxSize) {
+      return Response.json(
+        {
+          error: "File too large for preview",
+          contentLength: data.ContentLength,
+          maxSize: maxSize,
+        },
+        { status: 413 },
+      );
+    }
+
     // Convert Body to bytes
     const buffer = await data.Body.transformToByteArray();
 
@@ -93,34 +106,6 @@ export async function GET(req) {
         contentType: contentType,
         type: "image",
         imageUrl: dataUrl,
-        lastModified: data.LastModified,
-      });
-    }
-
-    // Handle video files
-    if (isVideo) {
-      const base64 = Buffer.from(buffer).toString("base64");
-      const dataUrl = `data:${contentType};base64,${base64}`;
-      return Response.json({
-        key: key,
-        contentLength: data.ContentLength,
-        contentType: contentType,
-        type: "video",
-        videoUrl: dataUrl,
-        lastModified: data.LastModified,
-      });
-    }
-
-    // Handle PDF files
-    if (isPDF) {
-      const base64 = Buffer.from(buffer).toString("base64");
-      const dataUrl = `data:application/pdf;base64,${base64}`;
-      return Response.json({
-        key: key,
-        contentLength: data.ContentLength,
-        contentType: contentType,
-        type: "pdf",
-        pdfUrl: dataUrl,
         lastModified: data.LastModified,
       });
     }
