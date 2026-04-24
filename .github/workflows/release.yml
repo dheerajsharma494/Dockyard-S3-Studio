@@ -26,7 +26,7 @@ jobs:
               run: npm ci
 
             - name: Build Next.js + package DMG
-              run: npm run desktop:dist:mac
+              run: npm run desktop:dist:mac -- --publish never
               env:
                   # Skip notarization in CI (no Apple certs)
                   SKIP_NOTARIZE: true
@@ -55,7 +55,7 @@ jobs:
               run: npm ci
 
             - name: Build Next.js + package installer
-              run: npm run desktop:dist:win
+              run: npm run desktop:dist:win -- --publish never
 
             - name: Upload Windows artifact
               uses: actions/upload-artifact@v4
