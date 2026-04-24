@@ -339,6 +339,38 @@ export default function BucketList({
           {showOtherBuckets && otherBucketItems.map((b) => renderBucketRow(b))}
         </>
       )}
+
+      {!isCollapsed && (
+        <div style={{ marginTop: "auto", padding: "12px 10px 14px", borderTop: "1px solid rgba(146, 184, 224, 0.15)" }}>
+          <button
+            type="button"
+            onClick={() => window.open("https://ko-fi.com/dheerajsharma494", "_blank")}
+            style={{
+              width: "100%",
+              padding: "9px 12px",
+              borderRadius: 10,
+              border: "none",
+              background: "linear-gradient(135deg, #ff5e5b, #ff8c42)",
+              color: "#fff",
+              fontSize: 12,
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              letterSpacing: 0.3,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.88"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.opacity = "1"; }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311zm6.173.478c-.928.116-1.682-.284-1.682-.284V7.381c1.698.67 2.146 1.918 2.146 1.918s.284 1.868-.464 2.638z"/>
+            </svg>
+            Support on Ko-fi
+          </button>
+        </div>
+      )}
     </div>
   );
 }

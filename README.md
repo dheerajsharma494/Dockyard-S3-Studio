@@ -1,5 +1,7 @@
 # Dockyard S3 Studio
 
+[![Ko-fi](https://img.shields.io/badge/Support%20on%20Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/dheerajsharma494)
+
 A modern S3 workspace for LocalStack and AWS.
 
 Browse buckets, manage objects, preview common file formats, and run advanced S3 operations from one UI.
@@ -341,6 +343,12 @@ Core endpoints:
 kill $(lsof -t -i :3000)
 npm run dev
 ```
+
+## Support
+
+If you find Dockyard S3 Studio useful, consider buying me a coffee!
+
+[![Support on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/dheerajsharma494)
 
 ## License
 
