@@ -11,15 +11,25 @@ export async function POST(req) {
     if (tool === "awscli") {
       const commands = {
         list: `aws s3 ls s3://${bucket} --recursive`,
+        cp: `aws s3 cp s3://${bucket}/${key} ./${key.split("/").pop()}`,
+        sync: `aws s3 sync s3://${bucket} ./local-dir`,
+        rm: `aws s3 rm s3://${bucket}/${key}`,
+        mb: `aws s3 mb s3://${bucket}`,
+        rb: `aws s3 rb s3://${bucket} --force`,
+        // legacy aliases
         upload: `aws s3 cp ./local-file s3://${bucket}/${key}`,
         download: `aws s3 cp s3://${bucket}/${key} ${destination}`,
         move: `aws s3 mv s3://${bucket}/${key} s3://${bucket}/new/path/${key.split("/").pop()}`,
         delete: `aws s3 rm s3://${bucket}/${key}`,
       };
-      return Response.json({
-        success: true,
-        command: commands[operation] || commands.list,
-      });
+      const command = commands[operation];
+      if (!command) {
+        return Response.json(
+          { error: `Unsupported operation: ${operation}` },
+          { status: 400 },
+        );
+      }
+      return Response.json({ success: true, command });
     }
 
     if (tool === "boto3") {

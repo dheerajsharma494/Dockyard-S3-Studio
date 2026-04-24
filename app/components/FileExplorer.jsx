@@ -7,6 +7,7 @@ import PreviewModal from "./PreviewModal";
 const MULTIPART_THRESHOLD = 100 * 1024 * 1024;
 const MULTIPART_PART_SIZE = 10 * 1024 * 1024;
 const THEME_STORAGE_KEY = "dockyard-theme-mode";
+const HELP_SEEN_STORAGE_KEY = "dockyard-help-seen";
 
 export default function FileExplorer({ bucket }) {
   const [data, setData] = useState({ folders: [], files: [] });
@@ -30,6 +31,8 @@ export default function FileExplorer({ bucket }) {
   const [actionModal, setActionModal] = useState(null);
   const [themeMode, setThemeMode] = useState("system");
   const [resolvedTheme, setResolvedTheme] = useState("dark");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [isCompactLayout, setIsCompactLayout] = useState(false);
   const [isPhoneLayout, setIsPhoneLayout] = useState(false);
   const [previewFile, setPreviewFile] = useState(null);
@@ -145,7 +148,32 @@ export default function FileExplorer({ bucket }) {
     setSearchText("");
     setCurrentPage(1);
     setSelectedKeys([]);
+    setIsEditMode(false);
   }, [bucket]);
+
+  useEffect(() => {
+    if (!bucket || typeof window === "undefined") return;
+    const seen = window.localStorage.getItem(HELP_SEEN_STORAGE_KEY);
+    if (!seen) {
+      setHelpOpen(true);
+    }
+  }, [bucket]);
+
+  const closeHelp = (markSeen = false) => {
+    if (markSeen && typeof window !== "undefined") {
+      window.localStorage.setItem(HELP_SEEN_STORAGE_KEY, "1");
+    }
+    setHelpOpen(false);
+  };
+
+  const ensureEditMode = (actionLabel) => {
+    if (isEditMode) return true;
+    openResultModal({
+      title: "View Only Mode",
+      content: `${actionLabel} is disabled in View Only mode. Use the mode toggle near the bucket name to switch to Edit mode.`,
+    });
+    return false;
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -396,6 +424,7 @@ export default function FileExplorer({ bucket }) {
       }
 
       if (action === "rename") {
+        if (!ensureEditMode("Rename folder")) return;
         openActionModal({
           title: "Rename Folder",
           fields: [
@@ -441,6 +470,7 @@ export default function FileExplorer({ bucket }) {
       }
 
       if (action === "copy") {
+        if (!ensureEditMode("Copy folder")) return;
         openResultModal({
           title: "Folder Path",
           content: item.fullName,
@@ -450,6 +480,7 @@ export default function FileExplorer({ bucket }) {
       }
 
       if (action === "delete") {
+        if (!ensureEditMode("Delete folder")) return;
         openActionModal({
           title: "Delete Folder",
           fields: [],
@@ -518,6 +549,7 @@ export default function FileExplorer({ bucket }) {
     }
 
     if (action === "signedUrl") {
+      if (!ensureEditMode("Copy signed URL")) return;
       await handleSignedUrl(item.fullName);
       return;
     }
@@ -540,6 +572,7 @@ export default function FileExplorer({ bucket }) {
     }
 
     if (action === "restoreArchive") {
+      if (!ensureEditMode("Restore archive")) return;
       openActionModal({
         title: "Restore Archive",
         fields: [
@@ -571,6 +604,7 @@ export default function FileExplorer({ bucket }) {
     }
 
     if (action === "delete") {
+      if (!ensureEditMode("Delete file")) return;
       openActionModal({
         title: "Delete File",
         fields: [],
@@ -594,6 +628,7 @@ export default function FileExplorer({ bucket }) {
     }
 
     if (action === "rename") {
+      if (!ensureEditMode("Rename file")) return;
       openActionModal({
         title: "Rename File",
         fields: [
@@ -621,6 +656,7 @@ export default function FileExplorer({ bucket }) {
     }
 
     if (action === "bin") {
+      if (!ensureEditMode("Move to bin")) return;
       const destinationKey = `.bin/${Date.now()}-${item.label}`;
       await fetch("/api/move", {
         method: "POST",
@@ -632,12 +668,14 @@ export default function FileExplorer({ bucket }) {
     }
 
     if (action === "metadata") {
+      if (!ensureEditMode("Edit metadata")) return;
       setMetadataModalKey(item.fullName);
       setMetadataModalOpen(true);
       return;
     }
 
     if (action === "tags") {
+      if (!ensureEditMode("Edit tags")) return;
       setMetadataModalKey(item.fullName);
       setMetadataModalOpen(true);
       return;
@@ -775,6 +813,12 @@ export default function FileExplorer({ bucket }) {
   };
 
   const handleUpload = async (e) => {
+    if (!isEditMode) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      ensureEditMode("Upload files");
+      return;
+    }
+
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -827,6 +871,12 @@ export default function FileExplorer({ bucket }) {
   };
 
   const handleLocalFolderUpload = async (e) => {
+    if (!isEditMode) {
+      if (directoryInputRef.current) directoryInputRef.current.value = "";
+      ensureEditMode("Upload folders");
+      return;
+    }
+
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -1040,6 +1090,11 @@ export default function FileExplorer({ bucket }) {
   };
 
   const handleBatchAction = async (operation) => {
+    if (!isEditMode) {
+      ensureEditMode(`Batch ${operation}`);
+      return;
+    }
+
     if (operation === "copy" || operation === "move") {
       const currentPath = prefix || "/";
       openActionModal({
@@ -1099,6 +1154,8 @@ export default function FileExplorer({ bucket }) {
   };
 
   const handleCreateFolder = async () => {
+    if (!ensureEditMode("Create folder")) return;
+
     openActionModal({
       title: "Create Folder",
       fields: [{ name: "name", label: "Folder name", type: "text", defaultValue: "" }],
@@ -1336,6 +1393,8 @@ export default function FileExplorer({ bucket }) {
   };
 
   const handleOpenUploadPicker = () => {
+    if (!ensureEditMode("Upload")) return;
+
     openActionModal({
       title: "Upload to current location",
       fields: [
@@ -1480,84 +1539,85 @@ export default function FileExplorer({ bucket }) {
             <span className="tag">Bucket Explorer</span>
           </span>
         </div>
+        {/* Bucket name + mode pill */}
         <button
-          onClick={navigateBack}
-          disabled={history.length === 0}
+          type="button"
+          onClick={() => setIsEditMode((prev) => !prev)}
+          title={isEditMode ? "Click to switch back to View Only" : "Click to enable Edit mode"}
           style={{
-            background: theme.backButtonBg,
-            border: theme.backButtonBorder,
-            borderRadius: 10,
-            padding: isPhoneLayout ? "4px 8px" : "4px 12px",
-            cursor: history.length === 0 ? "not-allowed" : "pointer",
-            color: history.length === 0 ? theme.softText : theme.backButtonText,
-            fontSize: isPhoneLayout ? 12 : 13,
-            display: "flex",
+            display: "inline-flex",
             alignItems: "center",
-            gap: 4
-          }}
-        >
-          ← Back
-        </button>
-        
-        <button
-          onClick={handleOpenUploadPicker}
-          disabled={uploading}
-          style={{
-            background: uploading ? "#5a799f" : "linear-gradient(140deg, #2bd2c9, #7de0ff)",
-            border: "none",
-            borderRadius: 10,
-            padding: isPhoneLayout ? "6px 10px" : "7px 12px",
-            cursor: uploading ? "not-allowed" : "pointer",
-            color: "#041019",
-            fontSize: isPhoneLayout ? 12 : 13,
-            fontWeight: 700,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            opacity: uploading ? 0.7 : 1
-          }}
-        >
-          {uploading ? `⏳ Uploading ${uploadProgress}%` : "⬆️ Upload"}
-        </button>
-
-        {uploading && (
-          <button
-            onClick={cancelCurrentUploads}
-            style={{
-              background: "#c94f5f",
-              border: "none",
-              borderRadius: 6,
-              padding: isPhoneLayout ? "6px 9px" : "7px 12px",
-              cursor: "pointer",
-              color: "#fff",
-              fontSize: isPhoneLayout ? 12 : 13,
-              fontWeight: 500
-            }}
-          >
-            Cancel Upload
-          </button>
-        )}
-
-        {uploadStatus && (
-          <span style={{ fontSize: 12, color: "#4f5f7f", maxWidth: isPhoneLayout ? "100%" : 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {uploadStatus}
-          </span>
-        )}
-
-        <button
-          onClick={handleCreateFolder}
-          style={{
-            background: "linear-gradient(140deg, #ff9865, #ffc07d)",
-            border: "none",
-            borderRadius: 10,
-            padding: isPhoneLayout ? "6px 10px" : "7px 12px",
+            gap: isPhoneLayout ? 6 : 8,
+            border: isEditMode
+              ? "1px solid rgba(255, 152, 101, 0.45)"
+              : "1px solid rgba(43, 210, 201, 0.35)",
+            borderRadius: 999,
+            padding: isPhoneLayout ? "5px 10px 5px 8px" : "6px 12px 6px 10px",
+            background: isEditMode
+              ? (isLightTheme ? "rgba(255, 152, 101, 0.12)" : "rgba(255, 152, 101, 0.1)")
+              : (isLightTheme ? "rgba(43, 210, 201, 0.10)" : "rgba(43, 210, 201, 0.08)"),
             cursor: "pointer",
-            color: "#1d140b",
-            fontSize: isPhoneLayout ? 12 : 13,
-            fontWeight: 700
+            transition: "all 0.18s ease",
           }}
         >
-          + Folder
+          {/* coloured dot */}
+          <span style={{
+            width: 7,
+            height: 7,
+            borderRadius: "50%",
+            flexShrink: 0,
+            background: isEditMode ? "#ff9865" : "#2bd2c9",
+            boxShadow: isEditMode ? "0 0 6px rgba(255,152,101,0.7)" : "0 0 6px rgba(43,210,201,0.7)",
+          }} />
+
+          {/* bucket name */}
+          <span style={{
+            fontSize: isPhoneLayout ? 12 : 13,
+            fontWeight: 600,
+            color: isLightTheme ? "#173153" : "#d6ecff",
+            maxWidth: isPhoneLayout ? 80 : 160,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}>
+            {bucket}
+          </span>
+
+          {/* divider */}
+          <span style={{
+            width: 1,
+            height: 14,
+            background: isEditMode ? "rgba(255,152,101,0.4)" : "rgba(43,210,201,0.3)",
+            flexShrink: 0,
+          }} />
+
+          {/* mode label + icon */}
+          <span style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            fontSize: isPhoneLayout ? 10 : 11,
+            fontWeight: 700,
+            letterSpacing: 0.4,
+            color: isEditMode
+              ? (isLightTheme ? "#a04010" : "#ffb87a")
+              : (isLightTheme ? "#1a7a74" : "#7de0d6"),
+          }}>
+            {isEditMode ? (
+              /* pen icon */
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M11.5 2.5l2 2-9 9H2.5v-2l9-9z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/>
+                <path d="M10 4l2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
+            ) : (
+              /* eye icon */
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <ellipse cx="8" cy="8" rx="7" ry="4.5" stroke="currentColor" strokeWidth="1.4"/>
+                <circle cx="8" cy="8" r="2" fill="currentColor"/>
+              </svg>
+            )}
+            {isEditMode ? "Edit" : "View Only"}
+          </span>
         </button>
 
         <input
@@ -1578,124 +1638,151 @@ export default function FileExplorer({ bucket }) {
           multiple
         />
 
-        <input
-          type="text"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          placeholder="Search files and folders"
+        <div
           style={{
             minWidth: isPhoneLayout ? 120 : isCompactLayout ? 160 : 220,
             flex: 1,
             maxWidth: isCompactLayout ? "100%" : 420,
-            border: theme.searchBorder,
-            borderRadius: 10,
-            padding: "7px 10px",
-            fontSize: isPhoneLayout ? 12 : 13,
-            background: theme.searchBg,
-            color: theme.searchText
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
           }}
-        />
-
-        <select
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          style={{ border: theme.controlBorder, borderRadius: 10, padding: isPhoneLayout ? "6px 8px" : "7px 10px", fontSize: isPhoneLayout ? 11 : 12, background: theme.controlBg, color: theme.controlText }}
         >
-          <option value="name">Sort: Name</option>
-          <option value="size">Sort: Size</option>
-          <option value="modified">Sort: Date Modified</option>
-          <option value="storageClass">Sort: Storage Class</option>
-        </select>
+          <input
+            type="text"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            placeholder="Search files and folders"
+            style={{
+              width: "100%",
+              border: theme.searchBorder,
+              borderRadius: 10,
+              padding: searchText ? "7px 34px 7px 10px" : "7px 10px",
+              fontSize: isPhoneLayout ? 12 : 13,
+              background: theme.searchBg,
+              color: theme.searchText
+            }}
+          />
+          {searchText && (
+            <button
+              type="button"
+              onClick={() => setSearchText("")}
+              title="Clear search"
+              style={{
+                position: "absolute",
+                right: 8,
+                border: "none",
+                background: "transparent",
+                color: theme.searchText,
+                cursor: "pointer",
+                fontSize: 16,
+                lineHeight: 1,
+                padding: 0,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: 0.75,
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
 
-        <select
-          value={sortDirection}
-          onChange={(e) => setSortDirection(e.target.value)}
-          style={{ border: theme.controlBorder, borderRadius: 10, padding: isPhoneLayout ? "6px 8px" : "7px 10px", fontSize: isPhoneLayout ? 11 : 12, background: theme.controlBg, color: theme.controlText }}
+        <div
+          style={{
+            width: "100%",
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            justifyContent: isPhoneLayout ? "flex-start" : "flex-end",
+            flexWrap: "wrap",
+          }}
         >
-          <option value="asc">Ascending</option>
-          <option value="desc">Descending</option>
-        </select>
+          <button
+            onClick={handleOpenUploadPicker}
+            disabled={uploading || !isEditMode}
+            style={{
+              background: uploading || !isEditMode ? "#5a799f" : "linear-gradient(140deg, #2bd2c9, #7de0ff)",
+              border: "none",
+              borderRadius: 10,
+              padding: isPhoneLayout ? "6px 10px" : "7px 12px",
+              cursor: uploading || !isEditMode ? "not-allowed" : "pointer",
+              color: "#041019",
+              fontSize: isPhoneLayout ? 12 : 13,
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              opacity: uploading || !isEditMode ? 0.7 : 1
+            }}
+            title={!isEditMode ? "Enable Edit mode to upload" : undefined}
+          >
+            {uploading ? `⏳ Uploading ${uploadProgress}%` : "⬆️ Upload"}
+          </button>
 
-        {/* View Mode Buttons (Right side) */}
-        <div style={{ marginLeft: isCompactLayout ? 0 : "auto", width: isCompactLayout ? "100%" : "auto", display: "flex", gap: isPhoneLayout ? 8 : 12, alignItems: "center", justifyContent: isCompactLayout ? "flex-end" : "flex-start", flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {uploading && (
             <button
-              type="button"
-              onClick={() => handleBatchAction("delete")}
-              disabled={selectedKeys.length === 0}
+              onClick={cancelCurrentUploads}
               style={{
-                ...toolbarButtonBaseStyle,
-                ...(selectedKeys.length === 0 ? toolbarButtonDisabledStyle : {})
+                background: "#c94f5f",
+                border: "none",
+                borderRadius: 6,
+                padding: isPhoneLayout ? "6px 9px" : "7px 12px",
+                cursor: "pointer",
+                color: "#fff",
+                fontSize: isPhoneLayout ? 12 : 13,
+                fontWeight: 500
               }}
             >
-              Delete
+              Cancel Upload
             </button>
-            <button
-              type="button"
-              onClick={handleBatchDownload}
-              disabled={selectedKeys.length === 0}
-              style={{
-                ...toolbarButtonBaseStyle,
-                ...(selectedKeys.length === 0 ? toolbarButtonDisabledStyle : {})
-              }}
-            >
-              Download
-            </button>
-            <button
-              type="button"
-              onClick={() => handleBatchAction("copy")}
-              disabled={selectedKeys.length === 0}
-              style={{
-                ...toolbarButtonBaseStyle,
-                ...(selectedKeys.length === 0 ? toolbarButtonDisabledStyle : {})
-              }}
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              onClick={() => handleBatchAction("move")}
-              disabled={selectedKeys.length === 0}
-              style={{
-                ...toolbarButtonBaseStyle,
-                ...(selectedKeys.length === 0 ? toolbarButtonDisabledStyle : {})
-              }}
-            >
-              Move
-            </button>
-            <button
-              type="button"
-              onClick={() => handleBatchAction("tag")}
-              disabled={selectedKeys.length === 0}
-              style={{
-                ...toolbarButtonBaseStyle,
-                ...(selectedKeys.length === 0 ? toolbarButtonDisabledStyle : {})
-              }}
-            >
-              Tag
-            </button>
-            <button
-              type="button"
-              onClick={handleCodegen}
-              style={toolbarButtonBaseStyle}
-            >
-              Codegen
-            </button>
-            <button
-              type="button"
-              onClick={handleCliExport}
-              style={toolbarButtonBaseStyle}
-            >
-              CLI Export
-            </button>
-            <button
-              type="button"
-              onClick={handleDbSeed}
-              style={toolbarButtonBaseStyle}
-            >
-              DB Seed
-            </button>
-          </div>
+          )}
+
+          {uploadStatus && (
+            <span style={{ fontSize: 12, color: "#4f5f7f", maxWidth: isPhoneLayout ? "100%" : 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {uploadStatus}
+            </span>
+          )}
+
+          <button
+            onClick={handleCreateFolder}
+            disabled={!isEditMode}
+            style={{
+              background: !isEditMode ? "#7f8c9f" : "linear-gradient(140deg, #ff9865, #ffc07d)",
+              border: "none",
+              borderRadius: 10,
+              padding: isPhoneLayout ? "6px 10px" : "7px 12px",
+              cursor: !isEditMode ? "not-allowed" : "pointer",
+              color: "#1d140b",
+              fontSize: isPhoneLayout ? 12 : 13,
+              fontWeight: 700,
+              opacity: !isEditMode ? 0.7 : 1,
+            }}
+            title={!isEditMode ? "Enable Edit mode to create folders" : undefined}
+          >
+            + Folder
+          </button>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            style={{ border: theme.controlBorder, borderRadius: 10, padding: isPhoneLayout ? "6px 8px" : "7px 10px", fontSize: isPhoneLayout ? 11 : 12, background: theme.controlBg, color: theme.controlText }}
+          >
+            <option value="name">Sort: Name</option>
+            <option value="size">Sort: Size</option>
+            <option value="modified">Sort: Date Modified</option>
+            <option value="storageClass">Sort: Storage Class</option>
+          </select>
+
+          <select
+            value={sortDirection}
+            onChange={(e) => setSortDirection(e.target.value)}
+            style={{ border: theme.controlBorder, borderRadius: 10, padding: isPhoneLayout ? "6px 8px" : "7px 10px", fontSize: isPhoneLayout ? 11 : 12, background: theme.controlBg, color: theme.controlText }}
+          >
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </select>
 
           <div style={{ display: "flex", border: theme.toolbarBorder, borderRadius: 8, overflow: "hidden", background: theme.viewToggleBg }}>
             <button
@@ -1731,7 +1818,6 @@ export default function FileExplorer({ bucket }) {
             </button>
           </div>
 
-          {/* Day/Night toggle */}
           <button
             type="button"
             onClick={() => setThemeMode(resolvedTheme === "dark" ? "light" : "dark")}
@@ -1750,10 +1836,52 @@ export default function FileExplorer({ bucket }) {
           >
             {resolvedTheme === "dark" ? "☀️" : "🌙"}
           </button>
+
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            title="How to use"
+            style={{
+              border: theme.controlBorder,
+              background: theme.controlBg,
+              color: theme.controlText,
+              borderRadius: 10,
+              padding: isPhoneLayout ? "6px 8px" : "7px 10px",
+              fontSize: isPhoneLayout ? 11 : 12,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Help
+          </button>
         </div>
 
         {/* Breadcrumbs */}
-        <nav style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, color: theme.crumbBase, flexWrap: "wrap", width: "100%" }}>
+        <nav style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: theme.crumbBase, flexWrap: "wrap", width: "100%" }}>
+          <button
+            type="button"
+            onClick={navigateBack}
+            disabled={history.length === 0}
+            title="Back"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 999,
+              border: theme.controlBorder,
+              background: theme.controlBg,
+              color: history.length === 0 ? theme.softText : theme.backButtonText,
+              cursor: history.length === 0 ? "not-allowed" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 14,
+              lineHeight: 1,
+              padding: 0,
+              marginRight: 2,
+            }}
+          >
+            ←
+          </button>
           {breadcrumbs.map((crumb, i) => {
             const isLast = i === breadcrumbs.length - 1;
             const label = i === 0 ? bucket : crumb.replace(breadcrumbs[i - 1], "").replace(/\/$/, "");
@@ -1773,6 +1901,27 @@ export default function FileExplorer({ bucket }) {
               </span>
             );
           })}
+          <button
+            type="button"
+            onClick={refreshListing}
+            title="Refresh current folder"
+            style={{
+              border: theme.controlBorder,
+              borderRadius: 10,
+              padding: "5px 9px",
+              cursor: "pointer",
+              background: theme.controlBg,
+              color: theme.controlText,
+              fontSize: 16,
+              lineHeight: 1,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginLeft: 6,
+            }}
+          >
+            ↻
+          </button>
         </nav>
       </div>
 
@@ -1787,8 +1936,72 @@ export default function FileExplorer({ bucket }) {
             flexWrap: "wrap",
             gap: isPhoneLayout ? 6 : 8,
             marginBottom: 10,
-            padding: "4px 0",
+            padding: "8px 0",
+            position: "sticky",
+            top: 0,
+            zIndex: 5,
+            background: theme.appBackground,
+            borderBottom: theme.headerBorder,
+            backdropFilter: "blur(10px)",
           }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginRight: isPhoneLayout ? 0 : "auto" }}>
+              <button
+                type="button"
+                onClick={handleBatchDownload}
+                disabled={selectedKeys.length === 0}
+                style={{
+                  ...toolbarButtonBaseStyle,
+                  ...(selectedKeys.length === 0 ? toolbarButtonDisabledStyle : {})
+                }}
+              >
+                Download
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchAction("copy")}
+                disabled={selectedKeys.length === 0 || !isEditMode}
+                style={{
+                  ...toolbarButtonBaseStyle,
+                  ...(selectedKeys.length === 0 || !isEditMode ? toolbarButtonDisabledStyle : {})
+                }}
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchAction("move")}
+                disabled={selectedKeys.length === 0 || !isEditMode}
+                style={{
+                  ...toolbarButtonBaseStyle,
+                  ...(selectedKeys.length === 0 || !isEditMode ? toolbarButtonDisabledStyle : {})
+                }}
+              >
+                Move
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchAction("tag")}
+                disabled={selectedKeys.length === 0 || !isEditMode}
+                style={{
+                  ...toolbarButtonBaseStyle,
+                  ...(selectedKeys.length === 0 || !isEditMode ? toolbarButtonDisabledStyle : {})
+                }}
+              >
+                Tag
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchAction("delete")}
+                disabled={selectedKeys.length === 0 || !isEditMode}
+                style={{
+                  ...toolbarButtonBaseStyle,
+                  ...(selectedKeys.length === 0 || !isEditMode ? toolbarButtonDisabledStyle : {})
+                }}
+              >
+                Delete
+              </button>
+            </div>
+
             <div style={{ fontSize: 11, color: theme.mutedText, fontWeight: 500 }}>
               Items on page: {paginatedItems.length}
             </div>
@@ -2185,6 +2398,106 @@ export default function FileExplorer({ bucket }) {
         </div>
       )}
 
+      {helpOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: isLightTheme ? "rgba(0, 0, 0, 0.28)" : "rgba(11, 16, 28, 0.56)",
+            zIndex: 1250,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => closeHelp(false)}
+        >
+          <div
+            style={{
+              width: "min(760px, 100%)",
+              maxHeight: "84vh",
+              overflowY: "auto",
+              background: isLightTheme ? "#f8fcff" : "#0d182a",
+              borderRadius: 14,
+              border: isLightTheme ? "1px solid rgba(180, 199, 222, 0.75)" : "1px solid rgba(146, 184, 224, 0.2)",
+              boxShadow: isLightTheme ? "0 24px 48px rgba(18, 39, 72, 0.16)" : "0 24px 48px rgba(0, 0, 0, 0.36)",
+              padding: 18,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 17, color: isLightTheme ? "#123055" : "#dcecff" }}>How to Use Dockyard S3 Studio</h3>
+              <button
+                type="button"
+                onClick={() => closeHelp(false)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: isLightTheme ? "#cc4b5a" : "#ff8fa0",
+                  fontSize: 18,
+                  cursor: "pointer",
+                }}
+                title="Close"
+              >
+                x
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+              <div style={{ padding: "10px 12px", borderRadius: 10, border: isLightTheme ? "1px solid #d7e3f2" : "1px solid rgba(146, 184, 224, 0.24)", background: isLightTheme ? "#ffffff" : "rgba(16, 30, 49, 0.72)", color: isLightTheme ? "#1e3b61" : "#cde4ff", fontSize: 13 }}>
+                1. Open a bucket: single-click selects a bucket, double-click opens it.
+              </div>
+              <div style={{ padding: "10px 12px", borderRadius: 10, border: isLightTheme ? "1px solid #d7e3f2" : "1px solid rgba(146, 184, 224, 0.24)", background: isLightTheme ? "#ffffff" : "rgba(16, 30, 49, 0.72)", color: isLightTheme ? "#1e3b61" : "#cde4ff", fontSize: 13 }}>
+                2. Mode toggle: bucket pill switches between View Only and Edit.
+              </div>
+              <div style={{ padding: "10px 12px", borderRadius: 10, border: isLightTheme ? "1px solid #d7e3f2" : "1px solid rgba(146, 184, 224, 0.24)", background: isLightTheme ? "#ffffff" : "rgba(16, 30, 49, 0.72)", color: isLightTheme ? "#1e3b61" : "#cde4ff", fontSize: 13 }}>
+                3. View Only allows browse, search, preview, and download only.
+              </div>
+              <div style={{ padding: "10px 12px", borderRadius: 10, border: isLightTheme ? "1px solid #d7e3f2" : "1px solid rgba(146, 184, 224, 0.24)", background: isLightTheme ? "#ffffff" : "rgba(16, 30, 49, 0.72)", color: isLightTheme ? "#1e3b61" : "#cde4ff", fontSize: 13 }}>
+                4. Edit mode unlocks upload, create folder, rename, delete, copy/move, and tag operations.
+              </div>
+              <div style={{ padding: "10px 12px", borderRadius: 10, border: isLightTheme ? "1px solid #d7e3f2" : "1px solid rgba(146, 184, 224, 0.24)", background: isLightTheme ? "#ffffff" : "rgba(16, 30, 49, 0.72)", color: isLightTheme ? "#1e3b61" : "#cde4ff", fontSize: 13 }}>
+                5. Use the second toolbar row for refresh, sort, list/tile view, theme, and Help.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => closeHelp(false)}
+                style={{
+                  border: theme.controlBorder,
+                  background: "transparent",
+                  color: theme.controlText,
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => closeHelp(true)}
+                style={{
+                  border: "none",
+                  background: "linear-gradient(135deg, #2bd2c9, #7de0ff)",
+                  color: "#041019",
+                  borderRadius: 8,
+                  padding: "8px 12px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                  fontWeight: 700,
+                }}
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {menuState.visible && (
         <div
           style={{
@@ -2203,8 +2516,10 @@ export default function FileExplorer({ bucket }) {
         >
           {(
             menuState.item?.isFolder
-              ? ["open", "details", "rename", "copy", "delete"]
-              : ["preview", "details", "download", "signedUrl", "archiveStatus", "restoreArchive", "metadata", "tags", "rename", "bin", "delete", "share", "copy"]
+              ? (isEditMode ? ["open", "details", "rename", "delete"] : ["open", "details"])
+              : (isEditMode
+                ? ["preview", "details", "download", "signedUrl", "archiveStatus", "restoreArchive", "metadata", "tags", "rename", "bin", "delete", "share"]
+                : ["preview", "details", "download"])
           ).map((action) => (
             <button
               key={action}

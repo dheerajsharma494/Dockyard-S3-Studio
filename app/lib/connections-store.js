@@ -12,11 +12,14 @@ function makeDefaultLocalstackConnection() {
     id: randomUUID(),
     name: "LocalStack (default)",
     provider: "localstack",
-    region: "us-east-1",
+    region: process.env.AWS_REGION || "us-east-1",
     endpoint: process.env.AWS_S3_CUSTOM_ENDPOINT_URL || "http://localhost:4566",
-    accessKeyId: "test",
-    secretAccessKey: "test",
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "test",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "test",
     forcePathStyle: true,
+    ...(process.env.AWS_SESSION_TOKEN
+      ? { sessionToken: process.env.AWS_SESSION_TOKEN }
+      : {}),
   };
 }
 

@@ -1,5 +1,8 @@
 import { createConnection, listConnections } from "@/app/lib/connections-store";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET() {
   const store = await listConnections();
   return Response.json(store);

@@ -1,6 +1,18 @@
 import { S3Client } from "@aws-sdk/client-s3";
 import { getActiveConnection } from "@/app/lib/connections-store";
 
+function resolveCredentialValue(connectionValue, envValue) {
+  if (connectionValue && connectionValue !== "test") {
+    return connectionValue;
+  }
+
+  if (envValue) {
+    return envValue;
+  }
+
+  return connectionValue || "test";
+}
+
 export async function getS3Client() {
   const connection = await getActiveConnection();
 
@@ -9,22 +21,31 @@ export async function getS3Client() {
   }
 
   const credentials = {
-    accessKeyId: connection.accessKeyId || "test",
-    secretAccessKey: connection.secretAccessKey || "test",
+    accessKeyId: resolveCredentialValue(
+      connection.accessKeyId,
+      process.env.AWS_ACCESS_KEY_ID,
+    ),
+    secretAccessKey: resolveCredentialValue(
+      connection.secretAccessKey,
+      process.env.AWS_SECRET_ACCESS_KEY,
+    ),
   };
 
   // Add session token if provided (for temporary AWS credentials)
-  if (connection.sessionToken) {
-    credentials.sessionToken = connection.sessionToken;
+  if (connection.sessionToken || process.env.AWS_SESSION_TOKEN) {
+    credentials.sessionToken =
+      connection.sessionToken || process.env.AWS_SESSION_TOKEN;
   }
 
   const clientConfig = {
-    region: connection.region || "us-east-1",
+    region: connection.region || process.env.AWS_REGION || "us-east-1",
     credentials,
   };
 
   if (connection.endpoint) {
     clientConfig.endpoint = connection.endpoint;
+  } else if (process.env.AWS_S3_CUSTOM_ENDPOINT_URL) {
+    clientConfig.endpoint = process.env.AWS_S3_CUSTOM_ENDPOINT_URL;
   }
 
   if (connection.provider === "localstack") {

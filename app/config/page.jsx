@@ -30,7 +30,7 @@ export default function ConfigPage() {
   );
 
   const loadConnections = async () => {
-    const res = await fetch("/api/connections");
+    const res = await fetch("/api/connections", { cache: "no-store" });
     const data = await res.json();
     setConnections(data.connections || []);
     setActiveConnectionId(data.activeConnectionId || "");
@@ -110,30 +110,46 @@ export default function ConfigPage() {
     }
 
     setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        endpoint: form.provider === "aws" ? "" : form.endpoint,
+        forcePathStyle: form.provider === "localstack" ? true : form.forcePathStyle,
+      };
 
-    const payload = {
-      ...form,
-      endpoint: form.provider === "aws" ? "" : form.endpoint,
-      forcePathStyle: form.provider === "localstack" ? true : form.forcePathStyle,
-    };
+      if (editingId) {
+        const res = await fetch(`/api/connections/${editingId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to update connection");
+        }
+      } else {
+        const res = await fetch("/api/connections", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to create connection");
+        }
+      }
 
-    if (editingId) {
-      await fetch(`/api/connections/${editingId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await fetch("/api/connections", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      await loadConnections();
+      resetForm();
+      setSaving(false);
+    } catch (error) {
+      setSaving(false);
+      setTestResult({
+        ok: false,
+        warning: false,
+        message: error.message || "Failed to save connection.",
       });
     }
-
-    await loadConnections();
-    resetForm();
-    setSaving(false);
   };
 
   const selectActive = async (id) => {
@@ -150,7 +166,13 @@ export default function ConfigPage() {
       return;
     }
 
-    await fetch(`/api/connections/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/connections/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Failed to delete connection");
+      return;
+    }
+
     await loadConnections();
 
     if (editingId === id) {

@@ -287,6 +287,22 @@ export default function BucketList({
       <div style={{ padding: isCollapsed ? "10px 4px 8px" : "10px 8px 12px", fontSize: 11, color: "#84a5c7", textTransform: "uppercase", letterSpacing: 1, textAlign: isCollapsed ? "center" : "left" }}>
         Buckets
       </div>
+      {!isCollapsed && (
+        <div
+          style={{
+            margin: "0 8px 10px",
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: "1px solid rgba(146, 184, 224, 0.2)",
+            background: "rgba(12, 22, 36, 0.58)",
+            color: "#9bb7d8",
+            fontSize: 11,
+            lineHeight: 1.35,
+          }}
+        >
+          Tip: single-click selects a bucket, double-click opens it.
+        </div>
+      )}
       {isCollapsed ? (
         buckets.map((b) => renderBucketRow(b))
       ) : (
