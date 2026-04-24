@@ -25,8 +25,11 @@ jobs:
             - name: Install dependencies
               run: npm ci
 
-            - name: Build Next.js + package DMG
-              run: npm run desktop:dist:mac -- --publish never
+            - name: Build Next.js
+              run: npm run build
+
+            - name: Package macOS DMG
+              run: npx electron-builder --mac dmg --publish never
               env:
                   # Skip notarization in CI (no Apple certs)
                   SKIP_NOTARIZE: true
@@ -54,8 +57,11 @@ jobs:
             - name: Install dependencies
               run: npm ci
 
-            - name: Build Next.js + package installer
-              run: npm run desktop:dist:win -- --publish never
+            - name: Build Next.js
+              run: npm run build
+
+            - name: Package Windows installer
+              run: npx electron-builder --win nsis --publish never
 
             - name: Upload Windows artifact
               uses: actions/upload-artifact@v4
