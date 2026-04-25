@@ -2,12 +2,9 @@ name: Desktop Windows Build
 
 on:
     workflow_dispatch:
-    push:
-        tags:
-            - "v*"
 
 permissions:
-    contents: read
+    contents: write
 
 jobs:
     build-windows:
@@ -19,14 +16,11 @@ jobs:
             - name: Setup Node
               uses: actions/setup-node@v4
               with:
-                  node-version: 20
+                  node-version: 24
                   cache: npm
 
             - name: Install dependencies
-              run: npm ci
-
-            - name: Generate desktop icons
-              run: npm run desktop:icons
+              run: npm ci --omit=optional
 
             - name: Prepare Windows signing certificate
               shell: pwsh
@@ -43,8 +37,9 @@ jobs:
 
             - name: Build Windows desktop artifacts
               env:
-                  CSC_LINK: ${{ env.CSC_LINK }}
-                  CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  CSC_IDENTITY_AUTO_DISCOVERY: false
+                  ELECTRON_BUILDER_SKIP_NATIVE_BUILD: true
               run: npm run desktop:dist:win
 
             - name: Upload Windows artifacts

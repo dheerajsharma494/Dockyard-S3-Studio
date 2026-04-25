@@ -61,7 +61,7 @@
       "jsconfig.json",
       "package.json"
     ],
-    "asar": false,
+    "asar": true,
     "afterSign": "electron/notarize.js",
     "mac": {
       "icon": "electron/icons/icon.icns",
