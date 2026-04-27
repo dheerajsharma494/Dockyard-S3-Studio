@@ -1,4 +1,5 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -10,6 +11,71 @@ const PROD_PORT = Number(process.env.ELECTRON_PORT || 3123);
 let nextServer = null;
 let nextServerApp = null;
 let nextServerLogTail = [];
+let updaterInitialized = false;
+
+function setupAutoUpdater(mainWindow) {
+  if (!app.isPackaged || updaterInitialized) return;
+  updaterInitialized = true;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[updater] Checking for updates");
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log("[updater] Update available", info.version);
+    dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "Update available",
+        message: `Version ${info.version} is available. Downloading in the background...`,
+      })
+      .catch((error) => {
+        console.warn("[updater] Failed to show update-available dialog", error);
+      });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[updater] App is up to date");
+  });
+
+  autoUpdater.on("error", (error) => {
+    console.error("[updater] Update error", error);
+  });
+
+  autoUpdater.on("update-downloaded", async (info) => {
+    console.log("[updater] Update downloaded", info.version);
+
+    try {
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: "Update ready",
+        message: `Version ${info.version} has been downloaded. Restart now to install it?`,
+        buttons: ["Restart now", "Later"],
+        defaultId: 0,
+        cancelId: 1,
+      });
+
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall(false, true);
+      }
+    } catch (error) {
+      console.error("[updater] Failed to show update-downloaded dialog", error);
+    }
+  });
+
+  const checkForUpdates = () => {
+    autoUpdater.checkForUpdates().catch((error) => {
+      console.error("[updater] Failed to check for updates", error);
+    });
+  };
+
+  // Run one check shortly after startup, then periodically every 4 hours.
+  setTimeout(checkForUpdates, 12000);
+  setInterval(checkForUpdates, 4 * 60 * 60 * 1000);
+}
 
 function pushServerLog(line) {
   if (!line) return;
@@ -189,6 +255,8 @@ async function bootstrapMainWindow() {
     }
 
     await mainWindow.loadURL(urlToLoad);
+
+    setupAutoUpdater(mainWindow);
   } catch (error) {
     console.error("Failed to bootstrap window", error);
     await showStartupError(mainWindow, error);

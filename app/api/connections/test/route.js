@@ -1,5 +1,19 @@
 import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
 
+function normalizeEndpoint(endpoint) {
+  const value = (endpoint || "").trim();
+
+  if (!value) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  return `https://${value}`;
+}
+
 function buildClientConfig(input) {
   const credentials = {
     accessKeyId: input.accessKeyId || "test",
@@ -18,7 +32,7 @@ function buildClientConfig(input) {
   };
 
   if (input.provider !== "aws" && input.endpoint) {
-    config.endpoint = input.endpoint;
+    config.endpoint = normalizeEndpoint(input.endpoint);
   }
 
   return config;
@@ -77,7 +91,7 @@ export async function POST(req) {
       return Response.json(
         {
           ok: false,
-          message: "endpoint is required for LocalStack connections",
+          message: "endpoint is required for non-AWS providers",
         },
         { status: 400 },
       );

@@ -1,10 +1,14 @@
 {
   "name": "localstack-s3-explorer",
-  "version": "1.0.1",
+  "version": "1.0.5",
   "description": "Dockyard S3 Studio desktop app",
   "author": "Dockyard S3 Studio",
   "license": "MIT",
   "homepage": "https://example.com/dockyard-s3-studio",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dheerajsharma494/Dockyard-S3-Studio.git"
+  },
   "main": "electron/main.js",
   "private": true,
   "scripts": {
@@ -15,16 +19,17 @@
     "desktop:dev": "concurrently -k \"npm run dev -- -p 3000\" \"wait-on http://localhost:3000 && electron .\"",
     "desktop:start": "concurrently -k \"npm run start -- -p 3000\" \"wait-on http://localhost:3000 && electron .\"",
     "desktop:prod": "npm run build && npm run desktop:start",
-    "desktop:dist:mac": "npm run build && electron-builder --mac dmg",
-    "desktop:dist:mac:dir": "npm run build && electron-builder --mac dir",
-    "desktop:dist:win": "npm run build && electron-builder --win nsis",
-    "desktop:dist:win:portable": "npm run build && electron-builder --win portable",
-    "desktop:dist:win:dir": "npm run build && electron-builder --win dir"
+    "desktop:dist:mac": "npm run build && electron-builder --mac dmg --publish never",
+    "desktop:dist:mac:dir": "npm run build && electron-builder --mac dir --publish never",
+    "desktop:dist:win": "npm run build && electron-builder --win nsis --publish never",
+    "desktop:dist:win:portable": "npm run build && electron-builder --win portable --publish never",
+    "desktop:dist:win:dir": "npm run build && electron-builder --win dir --publish never"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/s3-request-presigner": "^3.0.0",
     "archiver": "^7.0.1",
+    "electron-updater": "^6.6.2",
     "next": "^16.2.4",
     "pdfjs-dist": "3.11.174",
     "react": "^18.0.0",
@@ -110,6 +115,14 @@
       "uninstallerIcon": "electron/icons/icon.ico",
       "installerHeaderIcon": "electron/icons/icon.ico"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "dheerajsharma494",
+        "repo": "Dockyard-S3-Studio",
+        "releaseType": "release"
+      }
+    ],
     "extraMetadata": {
       "name": "dockyard-s3-studio"
     }

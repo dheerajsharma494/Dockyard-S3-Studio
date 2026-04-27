@@ -1,131 +1,175 @@
 name: Build & Release
 
 on:
-    workflow_dispatch:
-    push:
-        tags:
-            - "v*.*.*"
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*.*.*"
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    build-mac:
-        name: Build macOS (DMG)
-        runs-on: macos-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  build-mac:
+    name: Build macOS (DMG)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 24
-                  cache: "npm"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "npm"
 
-            - name: Install dependencies
-              run: npm ci
+      - name: Install dependencies
+        run: npm ci
 
-            - name: Import Apple signing certificate
-              env:
-                  APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
-                  APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-                  KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-              run: |
-                  if [[ -z "$APPLE_CERTIFICATE_P12" || -z "$APPLE_CERTIFICATE_PASSWORD" || -z "$KEYCHAIN_PASSWORD" ]]; then
-                    echo "Skipping Apple certificate import because signing secrets are not fully configured."
-                    exit 0
-                  fi
-                  CERT_PATH="$RUNNER_TEMP/apple-signing-cert.p12"
-                  KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-                  echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$CERT_PATH"
-                  security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-                  security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-                  security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-                  security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-                  security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-                  security list-keychains -d user -s "$KEYCHAIN_PATH"
-                  security default-keychain -s "$KEYCHAIN_PATH"
+      - name: Import Apple signing certificate
+        env:
+          APPLE_CERTIFICATE_P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          if [[ -z "$APPLE_CERTIFICATE_P12" || -z "$APPLE_CERTIFICATE_PASSWORD" || -z "$KEYCHAIN_PASSWORD" ]]; then
+            echo "Skipping Apple certificate import because signing secrets are not fully configured."
+            exit 0
+          fi
+          CERT_PATH="$RUNNER_TEMP/apple-signing-cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          echo "$APPLE_CERTIFICATE_P12" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
 
-            - name: Build macOS desktop artifacts
-              run: npm run desktop:dist:mac
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build macOS desktop artifacts
+        run: npm run desktop:dist:mac
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Upload macOS artifact
-              uses: actions/upload-artifact@v4
-              with:
-                  name: mac-dmg
-                  path: dist/*.dmg
-                  retention-days: 1
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/latest-mac.yml
+            dist/*.blockmap
+          retention-days: 1
 
-    build-win:
-        name: Build Windows (NSIS)
-        runs-on: windows-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  build-win:
+    name: Build Windows (NSIS)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 24
-                  cache: "npm"
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "npm"
 
-            - name: Install dependencies
-              run: npm ci --omit=optional
+      - name: Install dependencies
+        run: npm ci --omit=optional
 
-            - name: Prepare Windows signing certificate
-              shell: pwsh
-              env:
-                  WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-              run: |
-                  if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) {
-                    Write-Host "Skipping Windows signing certificate import because WIN_CSC_LINK is not configured."
-                    exit 0
-                  }
-                  $certPath = Join-Path $env:RUNNER_TEMP "windows-signing-cert.p12"
-                  [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WIN_CSC_LINK))
-                  "CSC_LINK=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Prepare Windows signing certificate
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) {
+            Write-Host "Skipping Windows signing certificate import because WIN_CSC_LINK is not configured."
+            exit 0
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP "windows-signing-cert.p12"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WIN_CSC_LINK))
+          "CSC_LINK=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-            - name: Build Windows desktop artifacts
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  CSC_IDENTITY_AUTO_DISCOVERY: false
-                  ELECTRON_BUILDER_SKIP_NATIVE_BUILD: true
-              run: npm run desktop:dist:win
+      - name: Build Windows desktop artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          ELECTRON_BUILDER_SKIP_NATIVE_BUILD: true
+        run: npm run desktop:dist:win
 
-            - name: Upload Windows artifact
-              uses: actions/upload-artifact@v4
-              with:
-                  name: win-installer
-                  path: dist/*.exe
-                  retention-days: 1
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-installer
+          path: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap
+          retention-days: 1
 
-    release:
-        name: Publish GitHub Release
-        needs: [ build-mac, build-win ]
-        runs-on: ubuntu-latest
-        steps:
-            - name: Download macOS artifact
-              uses: actions/download-artifact@v4
-              with:
-                  name: mac-dmg
-                  path: artifacts/mac
+  release:
+    name: Publish GitHub Release
+    needs: [ build-mac, build-win ]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-dmg
+          path: artifacts/mac
 
-            - name: Download Windows artifact
-              uses: actions/download-artifact@v4
-              with:
-                  name: win-installer
-                  path: artifacts/win
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: win-installer
+          path: artifacts/win
 
-            - name: Create GitHub Release and upload files
-              uses: softprops/action-gh-release@v2
-              with:
-                  name: "Dockyard S3 Studio ${{ github.ref_name }}"
-                  draft: false
-                  prerelease: false
-                  generate_release_notes: true
-                  files: |
-                      artifacts/mac/*.dmg
-                      artifacts/win/*.exe
+      - name: Upload release assets to Backblaze B2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.B2_REGION }}
+          B2_ENDPOINT: ${{ secrets.B2_ENDPOINT }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" || -z "$B2_ENDPOINT" || -z "$B2_BUCKET" ]]; then
+            echo "Skipping Backblaze B2 upload because required secrets are not configured."
+            exit 0
+          fi
+
+          if [[ -z "$AWS_DEFAULT_REGION" ]]; then
+            export AWS_DEFAULT_REGION="us-east-005"
+          fi
+
+          aws s3 cp artifacts/mac "s3://${B2_BUCKET}/releases/${RELEASE_TAG}/mac" --recursive --endpoint-url "${B2_ENDPOINT}"
+          aws s3 cp artifacts/win "s3://${B2_BUCKET}/releases/${RELEASE_TAG}/win" --recursive --endpoint-url "${B2_ENDPOINT}"
+
+          mkdir -p artifacts/latest
+          cp -f artifacts/mac/*.yml artifacts/latest/ 2>/dev/null || true
+          cp -f artifacts/mac/*.blockmap artifacts/latest/ 2>/dev/null || true
+          cp -f artifacts/win/*.yml artifacts/latest/ 2>/dev/null || true
+          cp -f artifacts/win/*.blockmap artifacts/latest/ 2>/dev/null || true
+          cp -f artifacts/win/*.exe artifacts/latest/ 2>/dev/null || true
+          cp -f artifacts/mac/*.dmg artifacts/latest/ 2>/dev/null || true
+          cp -f artifacts/mac/*.zip artifacts/latest/ 2>/dev/null || true
+
+          aws s3 cp artifacts/latest "s3://${B2_BUCKET}/latest" --recursive --endpoint-url "${B2_ENDPOINT}"
+
+      - name: Create GitHub Release and upload files
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Dockyard S3 Studio ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/mac/*.dmg
+            artifacts/mac/*.zip
+            artifacts/mac/*.yml
+            artifacts/mac/*.blockmap
+            artifacts/win/*.exe
+            artifacts/win/*.yml
+            artifacts/win/*.blockmap

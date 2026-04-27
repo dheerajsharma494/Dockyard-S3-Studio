@@ -2,14 +2,29 @@
 
 [![Ko-fi](https://img.shields.io/badge/Support%20on%20Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/dheerajsharma494)
 
-A modern S3 workspace for LocalStack and AWS.
+A modern S3 workspace for AWS and S3-compatible object storage providers.
 
 Browse buckets, manage objects, preview common file formats, and run advanced S3 operations from one UI.
 
 ## Highlights
 
-- Multi-connection support (LocalStack and AWS)
+- Multi-connection support across providers:
+  - LocalStack
+  - AWS S3
+  - Backblaze B2
+  - Cloudflare R2
+  - Wasabi
+  - DigitalOcean Spaces
+  - MinIO
+  - Linode Object Storage
+  - Oracle Object Storage
+  - IBM Cloud Object Storage (COS)
 - Connection switching with persisted active connection
+- Provider tiles with branding-style icons in the connection form
+- Provider-specific endpoint templates and setup hints
+- One-click copy for endpoint templates from provider help cards
+- AWS export snippet paste helper (auto-fills key, secret, session token, and region)
+- Endpoint normalization for non-AWS providers (auto-adds `https://` when protocol is missing)
 - Bucket sidebar with:
   - Double-click to open bucket
   - Pin/unpin buckets
@@ -186,6 +201,7 @@ GitHub Actions workflows are included for both macOS and Windows desktop builds:
 
 - `.github/workflows/desktop-macos.yml`
 - `.github/workflows/desktop-windows.yml`
+- `.github/workflows/release.yml` (tag-based cross-platform release pipeline)
 
 They run on:
 
@@ -215,9 +231,42 @@ Secret formats:
 
 If signing secrets are omitted, the workflows still build unsigned artifacts.
 
+### Optional Backblaze Release Mirror
+
+The release workflow can optionally upload desktop artifacts to Backblaze B2 (S3-compatible) in addition to GitHub Releases.
+
+Set these secrets to enable it:
+
+- `B2_KEY_ID`
+- `B2_APPLICATION_KEY`
+- `B2_BUCKET`
+- `B2_ENDPOINT`
+- `B2_REGION` (optional; defaults to `us-east-005`)
+
+When configured, artifacts are uploaded to:
+
+- `releases/<tag>/mac`
+- `releases/<tag>/win`
+- `latest`
+
 ## Configuration
 
 Connections are managed from the UI at /config.
+
+Connection UX features:
+
+- Pick providers using icon tiles instead of a dropdown
+- Paste AWS shell exports directly into the AWS helper block:
+
+```bash
+export AWS_ACCESS_KEY_ID="..."
+export AWS_SECRET_ACCESS_KEY="..."
+export AWS_SESSION_TOKEN="..."
+export AWS_REGION="us-east-1"
+```
+
+- For non-AWS providers, endpoints are normalized automatically:
+  - `s3.us-east-005.backblazeb2.com` -> `https://s3.us-east-005.backblazeb2.com`
 
 Stored connection data:
 
@@ -276,18 +325,18 @@ app/
     MetadataModal.jsx
     PreviewModal.jsx
     TreeNode.jsx
+  config/
+    page.jsx
+  lib/
+    connections-store.js
+    s3.js
+    webhooks-store.js
+    webhooks.js
+  tools/
+    page.jsx
   globals.css
   layout.js
   page.jsx
-config/
-  page.jsx
-tools/
-  page.jsx
-lib/
-  connections-store.js
-  s3.js
-  webhooks-store.js
-  webhooks.js
 next.config.js
 package.json
 ```

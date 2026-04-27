@@ -23,6 +23,39 @@ function makeDefaultLocalstackConnection() {
   };
 }
 
+function normalizeProvider(provider) {
+  if (
+    provider === "aws" ||
+    provider === "localstack" ||
+    provider === "backblaze" ||
+    provider === "cloudflare-r2" ||
+    provider === "wasabi" ||
+    provider === "digitalocean-spaces" ||
+    provider === "minio" ||
+    provider === "linode-object-storage" ||
+    provider === "oracle-object-storage" ||
+    provider === "ibm-cos"
+  ) {
+    return provider;
+  }
+
+  return "localstack";
+}
+
+function normalizeEndpoint(endpoint) {
+  const value = (endpoint || "").trim();
+
+  if (!value) {
+    return "";
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  return `https://${value}`;
+}
+
 async function readStoreFile() {
   try {
     const content = await fs.readFile(STORE_FILE, "utf8");
@@ -50,15 +83,18 @@ async function writeStoreFile(store) {
 }
 
 function sanitizeConnection(input, existingId) {
+  const provider = normalizeProvider(input.provider);
+
   const sanitized = {
     id: existingId || randomUUID(),
     name: (input.name || "Unnamed connection").trim(),
-    provider: input.provider === "aws" ? "aws" : "localstack",
+    provider,
     region: (input.region || "us-east-1").trim(),
-    endpoint: (input.endpoint || "").trim(),
+    endpoint: provider === "aws" ? "" : normalizeEndpoint(input.endpoint),
     accessKeyId: (input.accessKeyId || "").trim(),
     secretAccessKey: (input.secretAccessKey || "").trim(),
-    forcePathStyle: Boolean(input.forcePathStyle),
+    forcePathStyle:
+      provider === "localstack" ? true : Boolean(input.forcePathStyle),
   };
 
   // Optional AWS fields
