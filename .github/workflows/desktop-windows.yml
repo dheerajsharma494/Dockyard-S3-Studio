@@ -1,51 +1,51 @@
 name: Desktop Windows Build
 
 on:
-    workflow_dispatch:
+  workflow_dispatch:
 
 permissions:
-    contents: write
+  contents: write
 
 jobs:
-    build-windows:
-        runs-on: windows-2022
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Setup Node
-              uses: actions/setup-node@v4
-              with:
-                  node-version: 24
-                  cache: npm
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
 
-            - name: Install dependencies
-              run: npm ci --omit=optional
+      - name: Install dependencies
+        run: npm install --omit=optional
 
-            - name: Prepare Windows signing certificate
-              shell: pwsh
-              env:
-                  WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
-              run: |
-                  if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) {
-                    Write-Host "Skipping Windows signing certificate import because WIN_CSC_LINK is not configured."
-                    exit 0
-                  }
-                  $certPath = Join-Path $env:RUNNER_TEMP "windows-signing-cert.p12"
-                  [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WIN_CSC_LINK))
-                  "CSC_LINK=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Prepare Windows signing certificate
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) {
+            Write-Host "Skipping Windows signing certificate import because WIN_CSC_LINK is not configured."
+            exit 0
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP "windows-signing-cert.p12"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WIN_CSC_LINK))
+          "CSC_LINK=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-            - name: Build Windows desktop artifacts
-              env:
-                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-                  CSC_IDENTITY_AUTO_DISCOVERY: false
-                  ELECTRON_BUILDER_SKIP_NATIVE_BUILD: true
-              run: npm run desktop:dist:win
+      - name: Build Windows desktop artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          ELECTRON_BUILDER_SKIP_NATIVE_BUILD: true
+        run: npm run desktop:dist:win
 
-            - name: Upload Windows artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                  name: dockyard-s3-studio-windows
-                  path: |
-                      dist/*.exe
-                      dist/*.yml
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dockyard-s3-studio-windows
+          path: |
+            dist/*.exe
+            dist/*.yml
