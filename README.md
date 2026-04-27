@@ -1,6 +1,17 @@
 # Dockyard S3 Studio
 
+[![Latest Release](https://img.shields.io/github/v/release/dheerajsharma494/Dockyard-S3-Studio?style=for-the-badge&logo=github)](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest)
 [![Ko-fi](https://img.shields.io/badge/Support%20on%20Ko--fi-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white)](https://ko-fi.com/dheerajsharma494)
+
+## Download
+
+| Platform | Installer |
+|----------|-----------|
+| macOS (Apple Silicon) | [Releases page → `.dmg` (arm64)](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest) |
+| macOS (Intel)         | [Releases page → `.dmg` (x64)](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest) |
+| Windows               | [Releases page → `.exe`](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest) |
+
+> All releases: [github.com/dheerajsharma494/Dockyard-S3-Studio/releases](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases)
 
 A modern S3 workspace for AWS and S3-compatible object storage providers.
 
