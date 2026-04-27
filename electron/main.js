@@ -7,11 +7,35 @@ const next = require("next");
 
 const DEV_URL = process.env.ELECTRON_START_URL || "http://localhost:3000";
 const PROD_PORT = Number(process.env.ELECTRON_PORT || 3123);
+const RELEASES_URL =
+  "https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest";
 
 let nextServer = null;
 let nextServerApp = null;
 let nextServerLogTail = [];
 let updaterInitialized = false;
+
+async function showManualUpdateDialog(mainWindow, version, reason) {
+  try {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "Update requires manual download",
+      message: `Version ${version || "(latest)"} is available, but automatic install is unavailable on this build.`,
+      detail:
+        reason ||
+        "Please download and install the latest build from the Releases page.",
+      buttons: ["Open Downloads Page", "Later"],
+      defaultId: 0,
+      cancelId: 1,
+    });
+
+    if (result.response === 0) {
+      shell.openExternal(RELEASES_URL);
+    }
+  } catch (error) {
+    console.error("[updater] Failed to show manual update dialog", error);
+  }
+}
 
 function setupAutoUpdater(mainWindow) {
   if (!app.isPackaged || updaterInitialized) return;
@@ -43,12 +67,59 @@ function setupAutoUpdater(mainWindow) {
 
   autoUpdater.on("error", (error) => {
     console.error("[updater] Update error", error);
+
+    const message = String(error?.message || error || "");
+    if (
+      process.platform === "darwin" &&
+      /notar|code signature|signature|gatekeeper|spctl|damaged|cannot be opened/i.test(
+        message,
+      )
+    ) {
+      showManualUpdateDialog(
+        mainWindow,
+        null,
+        "macOS blocked automatic update install for this build. Download the latest app from Releases.",
+      );
+    }
   });
 
   autoUpdater.on("update-downloaded", async (info) => {
     console.log("[updater] Update downloaded", info.version);
 
     try {
+      if (process.platform === "darwin") {
+        const result = await dialog.showMessageBox(mainWindow, {
+          type: "info",
+          title: "Update downloaded",
+          message: `Version ${info.version} has been downloaded.`,
+          detail:
+            "If automatic install is blocked on your Mac, use 'Download manually' to install the latest build.",
+          buttons: ["Restart now", "Download manually", "Later"],
+          defaultId: 0,
+          cancelId: 2,
+        });
+
+        if (result.response === 1) {
+          shell.openExternal(RELEASES_URL);
+          return;
+        }
+
+        if (result.response === 0) {
+          try {
+            autoUpdater.quitAndInstall(false, true);
+          } catch (error) {
+            console.error("[updater] Failed to install update", error);
+            await showManualUpdateDialog(
+              mainWindow,
+              info.version,
+              "Automatic install failed on this macOS build. Please install manually from Releases.",
+            );
+          }
+        }
+
+        return;
+      }
+
       const result = await dialog.showMessageBox(mainWindow, {
         type: "info",
         title: "Update ready",
