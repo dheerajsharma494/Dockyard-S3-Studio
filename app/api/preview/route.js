@@ -2,6 +2,9 @@ import { getS3Client } from "@/app/lib/s3";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import * as XLSX from "xlsx";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const IMAGE_TYPES = [
   "image/jpeg",
   "image/png",

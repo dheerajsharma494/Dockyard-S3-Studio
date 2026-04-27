@@ -17,11 +17,12 @@ export default function BucketList({
   const [armedBucket, setArmedBucket] = useState(null);
   const [pinnedBuckets, setPinnedBuckets] = useState([]);
   const [showOtherBuckets, setShowOtherBuckets] = useState(false);
+  const [isRefreshingBuckets, setIsRefreshingBuckets] = useState(false);
 
   const PINNED_BUCKETS_KEY = "dockyard:pinnedBuckets";
 
   const loadConnections = async () => {
-    const res = await fetch("/api/connections");
+    const res = await fetch("/api/connections", { cache: "no-store" });
     const store = await res.json();
     setConnections(store.connections || []);
     setActiveConnectionId(store.activeConnectionId || "");
@@ -29,7 +30,7 @@ export default function BucketList({
   };
 
   const loadBuckets = async () => {
-    const res = await fetch("/api/buckets");
+    const res = await fetch("/api/buckets", { cache: "no-store" });
     if (!res.ok) {
       setBuckets([]);
       return;
@@ -85,6 +86,17 @@ export default function BucketList({
     onConnectionChange?.();
     setArmedBucket(null);
     await loadBuckets();
+  };
+
+  const handleRefreshBuckets = async () => {
+    if (isRefreshingBuckets) return;
+
+    setIsRefreshingBuckets(true);
+    try {
+      await loadBuckets();
+    } finally {
+      setIsRefreshingBuckets(false);
+    }
   };
 
   const pinnedBucketItems = buckets.filter((bucketItem) => pinnedBuckets.includes(bucketItem.Name));
@@ -284,8 +296,33 @@ export default function BucketList({
           </Link>
         </div>}
       </div>
-      <div style={{ padding: isCollapsed ? "10px 4px 8px" : "10px 8px 12px", fontSize: 11, color: "#84a5c7", textTransform: "uppercase", letterSpacing: 1, textAlign: isCollapsed ? "center" : "left" }}>
-        Buckets
+      <div style={{ padding: isCollapsed ? "10px 4px 8px" : "10px 8px 12px", fontSize: 11, color: "#84a5c7", textTransform: "uppercase", letterSpacing: 1, textAlign: isCollapsed ? "center" : "left", display: "flex", alignItems: "center", justifyContent: isCollapsed ? "center" : "space-between", gap: 8 }}>
+        <span>Buckets</span>
+        {!isCollapsed && (
+          <button
+            type="button"
+            title="Reload bucket list"
+            aria-label="Reload bucket list"
+            onClick={handleRefreshBuckets}
+            disabled={isRefreshingBuckets}
+            style={{
+              border: "1px solid rgba(146, 184, 224, 0.25)",
+              background: "rgba(10, 18, 30, 0.7)",
+              color: "#bcd5ef",
+              borderRadius: 8,
+              width: 24,
+              height: 24,
+              cursor: isRefreshingBuckets ? "wait" : "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: isRefreshingBuckets ? 0.65 : 1,
+              flexShrink: 0,
+            }}
+          >
+            {isRefreshingBuckets ? "…" : "↻"}
+          </button>
+        )}
       </div>
       {!isCollapsed && (
         <div

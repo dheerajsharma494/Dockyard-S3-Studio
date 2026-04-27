@@ -5,11 +5,11 @@
 
 ## Download
 
-| Platform | Installer |
-|----------|-----------|
+| Platform              | Installer                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------- |
 | macOS (Apple Silicon) | [Releases page → `.dmg` (arm64)](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest) |
-| macOS (Intel)         | [Releases page → `.dmg` (x64)](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest) |
-| Windows               | [Releases page → `.exe`](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest) |
+| macOS (Intel)         | [Releases page → `.dmg` (x64)](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest)   |
+| Windows               | [Releases page → `.exe`](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases/latest)         |
 
 > All releases: [github.com/dheerajsharma494/Dockyard-S3-Studio/releases](https://github.com/dheerajsharma494/Dockyard-S3-Studio/releases)
 

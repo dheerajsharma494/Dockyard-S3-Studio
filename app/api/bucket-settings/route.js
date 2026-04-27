@@ -12,6 +12,9 @@ import {
   PutPublicAccessBlockCommand,
 } from "@aws-sdk/client-s3";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 export async function GET(req) {
   const s3 = await getS3Client();
   const { searchParams } = new URL(req.url);

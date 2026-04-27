@@ -1,6 +1,9 @@
 import { getS3Client } from "@/app/lib/s3";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function inferContentTypeFromKey(key = "") {
   const lower = key.toLowerCase();
   if (lower.endsWith(".pdf")) return "application/pdf";
