@@ -28,14 +28,25 @@ function shouldAuthorizeRequest(resource) {
 
 const apiToken = getApiToken();
 
-if (
-  apiToken &&
-  typeof window !== "undefined" &&
-  typeof window.fetch === "function"
-) {
-  const nativeFetch = window.fetch.bind(window);
+function installAuthorizedFetchPatch() {
+  const scope =
+    typeof globalThis !== "undefined"
+      ? globalThis
+      : typeof window !== "undefined"
+        ? window
+        : null;
 
-  window.fetch = (resource, options = {}) => {
+  if (!scope || typeof scope.fetch !== "function") {
+    return false;
+  }
+
+  if (scope.fetch.__dockyardApiPatched) {
+    return true;
+  }
+
+  const nativeFetch = scope.fetch.bind(scope);
+
+  const patchedFetch = (resource, options = {}) => {
     if (!shouldAuthorizeRequest(resource)) {
       return nativeFetch(resource, options);
     }
@@ -63,6 +74,41 @@ if (
       headers,
     });
   };
+
+  patchedFetch.__dockyardApiPatched = true;
+  scope.fetch = patchedFetch;
+
+  if (typeof window !== "undefined") {
+    window.fetch = patchedFetch;
+  }
+
+  return true;
+}
+
+if (
+  apiToken &&
+  typeof window !== "undefined"
+) {
+  if (!installAuthorizedFetchPatch()) {
+    // Retry briefly because fetch availability timing can differ by Electron version.
+    let attempts = 0;
+    const maxAttempts = 20;
+    const retryPatch = () => {
+      if (installAuthorizedFetchPatch()) {
+        return;
+      }
+
+      attempts += 1;
+      if (attempts >= maxAttempts) {
+        console.warn("[preload] Failed to patch fetch for API authorization");
+        return;
+      }
+
+      setTimeout(retryPatch, 50);
+    };
+
+    retryPatch();
+  }
 }
 
 contextBridge.exposeInMainWorld("dockyardDesktop", {

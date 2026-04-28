@@ -670,6 +670,7 @@ export default function ConfigPage() {
         ok: Boolean(data.ok),
         warning: Boolean(data.warning),
         message:
+          data.error ||
           data.message ||
           (res.ok ? "Connection successful." : "Connection test failed."),
       };
