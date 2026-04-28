@@ -5,7 +5,11 @@ function getApiToken() {
     value.startsWith("--dockyard-api-token="),
   );
 
-  return tokenArg ? tokenArg.slice("--dockyard-api-token=".length) : "";
+  if (tokenArg) {
+    return tokenArg.slice("--dockyard-api-token=".length);
+  }
+
+  return process.env.DOCKYARD_API_TOKEN || "";
 }
 
 function shouldAuthorizeRequest(resource) {
@@ -85,10 +89,7 @@ function installAuthorizedFetchPatch() {
   return true;
 }
 
-if (
-  apiToken &&
-  typeof window !== "undefined"
-) {
+if (apiToken && typeof window !== "undefined") {
   if (!installAuthorizedFetchPatch()) {
     // Retry briefly because fetch availability timing can differ by Electron version.
     let attempts = 0;

@@ -15,6 +15,7 @@ let nextServer = null;
 let nextServerApp = null;
 let nextServerLogTail = [];
 let updaterInitialized = false;
+let apiHeaderInjectionInstalled = false;
 const apiSessionToken = randomBytes(32).toString("hex");
 
 process.env.DOCKYARD_API_TOKEN = apiSessionToken;
@@ -74,6 +75,33 @@ function isAuthorizedApiRequest(req) {
   }
 
   return { ok: true };
+}
+
+function installApiAuthHeaderInjection(session) {
+  if (apiHeaderInjectionInstalled || !session?.webRequest) {
+    return;
+  }
+
+  apiHeaderInjectionInstalled = true;
+
+  const urls = [
+    `http://127.0.0.1:${PROD_PORT}/api/*`,
+    `http://localhost:${PROD_PORT}/api/*`,
+    `http://[::1]:${PROD_PORT}/api/*`,
+  ];
+
+  session.webRequest.onBeforeSendHeaders({ urls }, (details, callback) => {
+    const requestHeaders = { ...(details.requestHeaders || {}) };
+    const hasAuthorization = Object.keys(requestHeaders).some(
+      (name) => name.toLowerCase() === "authorization",
+    );
+
+    if (!hasAuthorization) {
+      requestHeaders.Authorization = `Bearer ${apiSessionToken}`;
+    }
+
+    callback({ requestHeaders });
+  });
 }
 
 async function showManualUpdateDialog(mainWindow, version, reason) {
@@ -308,6 +336,8 @@ function createWindow() {
       sandbox: true,
     },
   });
+
+  installApiAuthHeaderInjection(mainWindow.webContents.session);
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     if (isAllowedExternalUrl(url)) {
