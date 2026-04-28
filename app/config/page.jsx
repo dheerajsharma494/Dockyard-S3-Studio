@@ -548,11 +548,15 @@ const emptyForm = {
   roleArn: "",
   externalId: "",
   forcePathStyle: true,
+  hasAccessKeyId: false,
+  hasSecretAccessKey: false,
+  hasSessionToken: false,
 };
 
 export default function ConfigPage() {
   const [connections, setConnections] = useState([]);
   const [activeConnectionId, setActiveConnectionId] = useState("");
+  const [expandedConnectionId, setExpandedConnectionId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -569,8 +573,17 @@ export default function ConfigPage() {
   const loadConnections = async () => {
     const res = await fetch("/api/connections", { cache: "no-store" });
     const data = await res.json();
-    setConnections(data.connections || []);
-    setActiveConnectionId(data.activeConnectionId || "");
+    const nextConnections = data.connections || [];
+    const nextActiveConnectionId = data.activeConnectionId || "";
+    setConnections(nextConnections);
+    setActiveConnectionId(nextActiveConnectionId);
+    setExpandedConnectionId((current) => {
+      if (nextConnections.some((item) => item.id === current)) {
+        return current;
+      }
+
+      return nextActiveConnectionId || nextConnections[0]?.id || null;
+    });
   };
 
   useEffect(() => {
@@ -587,21 +600,29 @@ export default function ConfigPage() {
     setTestResult(null);
     setAwsExportInput("");
     setAwsExportStatus("");
+
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
   };
 
   const startEdit = (connection) => {
+    setExpandedConnectionId(connection.id);
     setEditingId(connection.id);
     setForm({
       name: connection.name,
       provider: connection.provider,
       region: connection.region,
       endpoint: connection.endpoint || "",
-      accessKeyId: connection.accessKeyId || "",
-      secretAccessKey: connection.secretAccessKey || "",
-      sessionToken: connection.sessionToken || "",
+      accessKeyId: "",
+      secretAccessKey: "",
+      sessionToken: "",
       roleArn: connection.roleArn || "",
       externalId: connection.externalId || "",
       forcePathStyle: Boolean(connection.forcePathStyle),
+      hasAccessKeyId: Boolean(connection.hasAccessKeyId),
+      hasSecretAccessKey: Boolean(connection.hasSecretAccessKey),
+      hasSessionToken: Boolean(connection.hasSessionToken),
     });
     setTestResult(null);
     setAwsExportInput("");
@@ -629,18 +650,15 @@ export default function ConfigPage() {
     );
   };
 
-  const testConnection = async () => {
-    setTesting(true);
-    setTestResult(null);
+  const buildConnectionPayload = () => ({
+    ...form,
+    ...(editingId ? { id: editingId } : {}),
+    endpoint: form.provider === "aws" ? "" : normalizeEndpoint(form.endpoint),
+    forcePathStyle: form.provider === "localstack" ? true : form.forcePathStyle,
+  });
 
+  const requestConnectionTest = async (payload) => {
     try {
-      const payload = {
-        ...form,
-        endpoint:
-          form.provider === "aws" ? "" : normalizeEndpoint(form.endpoint),
-        forcePathStyle: form.provider === "localstack" ? true : form.forcePathStyle,
-      };
-
       const res = await fetch("/api/connections/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -648,71 +666,85 @@ export default function ConfigPage() {
       });
 
       const data = await res.json().catch(() => ({}));
-      setTestResult({
+      return {
         ok: Boolean(data.ok),
         warning: Boolean(data.warning),
-        message: data.message || (res.ok ? "Connection successful." : "Connection test failed."),
-      });
+        message:
+          data.message ||
+          (res.ok ? "Connection successful." : "Connection test failed."),
+      };
     } catch (error) {
-      setTestResult({ ok: false, warning: false, message: error.message || "Connection test failed." });
-    } finally {
-      setTesting(false);
+      return {
+        ok: false,
+        warning: false,
+        message: error.message || "Connection test failed.",
+      };
+    }
+  };
+
+  const saveConnection = async (payload) => {
+    if (editingId) {
+      const res = await fetch(`/api/connections/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to update connection");
+      }
+      return;
+    }
+
+    const res = await fetch("/api/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to create connection");
     }
   };
 
   const submitForm = async (e) => {
     e.preventDefault();
+    if (testing || saving) {
+      return;
+    }
 
-    if (!testResult?.ok) {
-      setTestResult({
-        ok: false,
-        warning: false,
-        message: "Please test the connection successfully before saving.",
-      });
+    const payload = buildConnectionPayload();
+    setTestResult(null);
+
+    setTesting(true);
+    const testOutcome = await requestConnectionTest(payload);
+    setTestResult(testOutcome);
+    setTesting(false);
+
+    if (!testOutcome.ok) {
       return;
     }
 
     setSaving(true);
     try {
-      const payload = {
-        ...form,
-        endpoint:
-          form.provider === "aws" ? "" : normalizeEndpoint(form.endpoint),
-        forcePathStyle: form.provider === "localstack" ? true : form.forcePathStyle,
-      };
-
-      if (editingId) {
-        const res = await fetch(`/api/connections/${editingId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to update connection");
-        }
-      } else {
-        const res = await fetch("/api/connections", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to create connection");
-        }
-      }
-
+      await saveConnection(payload);
       await loadConnections();
       resetForm();
-      setSaving(false);
+      setTestResult({
+        ok: true,
+        warning: Boolean(testOutcome.warning),
+        message: editingId
+          ? "Connection tested and updated successfully."
+          : "Connection tested and created successfully.",
+      });
     } catch (error) {
-      setSaving(false);
       setTestResult({
         ok: false,
         warning: false,
         message: error.message || "Failed to save connection.",
       });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -723,6 +755,7 @@ export default function ConfigPage() {
       body: JSON.stringify({ id }),
     });
     setActiveConnectionId(id);
+    setExpandedConnectionId(id);
   };
 
   const removeConnection = async (id) => {
@@ -786,38 +819,74 @@ export default function ConfigPage() {
                 <div style={{ padding: 16, color: "#91aac9" }}>No saved connections yet.</div>
               )}
               {connections.map((connection) => (
+                (() => {
+                  const isExpanded = expandedConnectionId === connection.id;
+                  const isActive = activeConnectionId === connection.id;
+
+                  return (
                 <div
                   key={connection.id}
                   style={{
-                    padding: "12px 16px",
+                    padding: isExpanded ? "14px 16px" : "12px 16px",
                     borderBottom: "1px solid rgba(146, 184, 224, 0.12)",
-                    background: activeConnectionId === connection.id ? "rgba(43, 210, 201, 0.12)" : "transparent",
+                    background: isActive ? "rgba(43, 210, 201, 0.12)" : "transparent",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                    <div>
-                      <div style={{ fontWeight: 700, color: "#e6f2ff" }}>{connection.name}</div>
-                      <div style={{ fontSize: 12, color: "#91aac9", marginTop: 2 }}>
-                        {(PROVIDER_LABELS[connection.provider] || connection.provider.toUpperCase())} · {connection.region}
-                        {connection.endpoint ? ` · ${connection.endpoint}` : ""}
+                  <div style={{ display: "flex", flexDirection: "column", gap: isExpanded ? 12 : 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <div style={{ fontWeight: 700, color: "#e6f2ff" }}>{connection.name}</div>
+                          <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, color: "#cfe4ff", background: "rgba(146, 184, 224, 0.12)", border: "1px solid rgba(146, 184, 224, 0.16)" }}>
+                            {PROVIDER_LABELS[connection.provider] || connection.provider.toUpperCase()}
+                          </span>
+                          <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, color: "#9db4d1", background: "rgba(10, 19, 33, 0.6)", border: "1px solid rgba(146, 184, 224, 0.12)" }}>
+                            {connection.region}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 12, color: "#91aac9", marginTop: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {connection.endpoint || "AWS managed endpoint"}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          padding: "4px 8px",
+                          borderRadius: 999,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          letterSpacing: 0.3,
+                          background:
+                            isActive
+                              ? "rgba(43, 210, 201, 0.18)"
+                              : "rgba(146, 184, 224, 0.12)",
+                          color: isActive ? "#7de0ff" : "#a9bfd8",
+                          border:
+                            isActive
+                              ? "1px solid rgba(43, 210, 201, 0.28)"
+                              : "1px solid rgba(146, 184, 224, 0.16)",
+                        }}
+                      >
+                        {isActive ? "ACTIVE" : "STANDBY"}
                       </div>
                     </div>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                       <button
                         type="button"
                         onClick={() => selectActive(connection.id)}
                         style={{
                           border: "1px solid rgba(146, 184, 224, 0.25)",
-                          background: activeConnectionId === connection.id ? "linear-gradient(140deg, #2bd2c9, #7de0ff)" : "rgba(18, 30, 47, 0.72)",
-                          color: activeConnectionId === connection.id ? "#041019" : "#dcecff",
-                          borderRadius: 8,
-                          padding: "4px 10px",
+                          background: isActive ? "linear-gradient(140deg, #2bd2c9, #7de0ff)" : "rgba(18, 30, 47, 0.72)",
+                          color: isActive ? "#041019" : "#dcecff",
+                          borderRadius: 10,
+                          padding: "8px 12px",
                           fontSize: 12,
                           cursor: "pointer",
-                          fontWeight: 600,
+                          fontWeight: 700,
+                          minWidth: 102,
                         }}
                       >
-                        {activeConnectionId === connection.id ? "Active" : "Set Active"}
+                        {isActive ? "In Use" : "Use This"}
                       </button>
                       <button
                         type="button"
@@ -826,32 +895,191 @@ export default function ConfigPage() {
                           border: "1px solid rgba(146, 184, 224, 0.25)",
                           background: "rgba(18, 30, 47, 0.72)",
                           color: "#dcecff",
-                          borderRadius: 8,
-                          padding: "4px 10px",
+                          borderRadius: 10,
+                          padding: "8px 12px",
                           fontSize: 12,
                           cursor: "pointer",
+                          minWidth: 92,
                         }}
                       >
                         Edit
                       </button>
                       <button
                         type="button"
-                        onClick={() => removeConnection(connection.id)}
+                        onClick={() => setExpandedConnectionId((current) => current === connection.id ? null : connection.id)}
                         style={{
-                          border: "1px solid rgba(255, 107, 129, 0.35)",
-                          background: "rgba(62, 21, 30, 0.4)",
-                          color: "#ff9aaa",
-                          borderRadius: 8,
-                          padding: "4px 10px",
+                          border: "1px solid rgba(146, 184, 224, 0.18)",
+                          background: "rgba(10, 19, 33, 0.6)",
+                          color: "#9db4d1",
+                          borderRadius: 10,
+                          padding: "8px 12px",
                           fontSize: 12,
                           cursor: "pointer",
                         }}
                       >
-                        Delete
+                        {isExpanded ? "Hide Details" : "Show Details"}
                       </button>
                     </div>
+
+                    {isExpanded && (
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "minmax(0, 1.25fr) minmax(0, 1fr)",
+                          gap: 10,
+                          paddingTop: 2,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#91aac9",
+                            padding: "14px",
+                            borderRadius: 14,
+                            background: isActive
+                              ? "linear-gradient(180deg, rgba(21, 50, 66, 0.95), rgba(10, 24, 37, 0.98))"
+                              : "linear-gradient(180deg, rgba(18, 33, 52, 0.95), rgba(10, 22, 35, 0.98))",
+                            border: isActive
+                              ? "1px solid rgba(43, 210, 201, 0.28)"
+                              : "1px solid rgba(125, 224, 255, 0.18)",
+                            boxShadow: isActive
+                              ? "0 12px 28px rgba(4, 16, 25, 0.32), inset 0 1px 0 rgba(125, 224, 255, 0.14)"
+                              : "0 10px 24px rgba(4, 16, 25, 0.26), inset 0 1px 0 rgba(125, 224, 255, 0.08)",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div
+                                aria-hidden="true"
+                                style={{
+                                  width: 30,
+                                  height: 30,
+                                  display: "grid",
+                                  placeItems: "center",
+                                  borderRadius: 9,
+                                  background: "linear-gradient(180deg, rgba(43, 210, 201, 0.2), rgba(125, 224, 255, 0.12))",
+                                  border: "1px solid rgba(43, 210, 201, 0.22)",
+                                  color: "#7de0ff",
+                                  fontWeight: 800,
+                                  boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05)",
+                                }}
+                              >
+                                C
+                              </div>
+                              <div style={{ fontSize: 11, letterSpacing: 0.3, textTransform: "uppercase", color: "#7de0ff", fontWeight: 700 }}>
+                                Connection Control
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                padding: "5px 8px",
+                                borderRadius: 999,
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: 0.3,
+                                color: isActive ? "#041019" : "#dcecff",
+                                background: isActive
+                                  ? "linear-gradient(140deg, #2bd2c9, #7de0ff)"
+                                  : "rgba(146, 184, 224, 0.16)",
+                              }}
+                            >
+                              {isActive ? "LIVE" : "READY"}
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 10, color: "#cfe4ff", lineHeight: 1.5 }}>
+                            Use this profile when you want the explorer and tools to run against <strong>{connection.name}</strong>.
+                          </div>
+                          <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 999, background: "rgba(43, 210, 201, 0.12)", border: "1px solid rgba(43, 210, 201, 0.16)", color: isActive ? "#7de0ff" : "#9db4d1" }}>
+                            <span style={{ width: 6, height: 6, borderRadius: 999, background: isActive ? "#2bd2c9" : "#6f8aa8" }} />
+                            {isActive ? "Currently active" : "Available to activate"}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: "#91aac9",
+                            padding: "14px",
+                            borderRadius: 14,
+                            background: "linear-gradient(180deg, rgba(37, 28, 18, 0.95), rgba(17, 20, 30, 0.98))",
+                            border: "1px solid rgba(255, 207, 122, 0.16)",
+                            boxShadow: "0 10px 24px rgba(4, 16, 25, 0.26), inset 0 1px 0 rgba(255, 207, 122, 0.06)",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <div
+                                aria-hidden="true"
+                                style={{
+                                  width: 30,
+                                  height: 30,
+                                  display: "grid",
+                                  placeItems: "center",
+                                  borderRadius: 9,
+                                  background: "linear-gradient(180deg, rgba(255, 207, 122, 0.2), rgba(255, 207, 122, 0.08))",
+                                  border: "1px solid rgba(255, 207, 122, 0.22)",
+                                  color: "#ffd28a",
+                                  fontWeight: 800,
+                                }}
+                              >
+                                S
+                              </div>
+                              <div style={{ fontSize: 11, letterSpacing: 0.3, textTransform: "uppercase", color: "#ffd28a", fontWeight: 700 }}>
+                                Security + Automation
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                padding: "5px 8px",
+                                borderRadius: 999,
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: 0.3,
+                                color: "#ffd28a",
+                                background: "rgba(255, 207, 122, 0.1)",
+                                border: "1px solid rgba(255, 207, 122, 0.14)",
+                              }}
+                            >
+                              SECURE
+                            </div>
+                          </div>
+                          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ padding: "6px 8px", borderRadius: 999, background: "rgba(146, 184, 224, 0.12)", color: "#cfe4ff", border: "1px solid rgba(146, 184, 224, 0.16)" }}>
+                              {connection.hasSecretAccessKey ? "Secret stored" : "Needs secret"}
+                            </span>
+                            <span style={{ padding: "6px 8px", borderRadius: 999, background: "rgba(10, 19, 33, 0.6)", color: "#9db4d1", border: "1px solid rgba(146, 184, 224, 0.12)" }}>
+                              {connection.hasAccessKeyId ? "Access key present" : "Access key missing"}
+                            </span>
+                            {connection.hasSessionToken && (
+                              <span style={{ padding: "6px 8px", borderRadius: 999, background: "rgba(255, 207, 122, 0.12)", color: "#ffd28a", border: "1px solid rgba(255, 207, 122, 0.16)" }}>
+                                Session token
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ marginTop: 10 }}>
+                            <button
+                              type="button"
+                              onClick={() => removeConnection(connection.id)}
+                              style={{
+                                border: "1px solid rgba(255, 107, 129, 0.35)",
+                                background: "rgba(62, 21, 30, 0.4)",
+                                color: "#ff9aaa",
+                                borderRadius: 10,
+                                padding: "8px 12px",
+                                fontSize: 12,
+                                cursor: "pointer",
+                                minWidth: 92,
+                              }}
+                            >
+                              Delete Profile
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
+                  );
+                })()
               ))}
             </div>
           </div>
@@ -880,6 +1108,20 @@ export default function ConfigPage() {
               )}
             </div>
 
+            <div style={{ padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(146, 184, 224, 0.16)", background: "rgba(14, 25, 41, 0.66)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, color: "#041019", background: "#7de0ff" }}>
+                  STEP 1
+                </span>
+                <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.3, color: "#7de0ff", textTransform: "uppercase" }}>
+                  Basic Connection Details
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: "#9db4d1", marginTop: 4 }}>
+                Start with the provider, region, and endpoint. Security settings are grouped below.
+              </div>
+            </div>
+
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
               Name
               <input
@@ -892,19 +1134,53 @@ export default function ConfigPage() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div style={{ fontSize: 13, color: "#cfe4ff" }}>Provider</div>
-              <ProviderTiles
-                provider={form.provider}
-                onSelect={(provider) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    provider,
-                    ...getProviderDefaults(provider, prev),
-                  }))
-                }
-              />
+              {editingId ? (
+                <div
+                  style={{
+                    border: "1px solid rgba(146, 184, 224, 0.22)",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    background: "rgba(14, 25, 41, 0.72)",
+                    color: "#dcecff",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div
+                      aria-hidden="true"
+                      style={{
+                        minWidth: 38,
+                        width: 38,
+                        height: 38,
+                        display: "grid",
+                        placeItems: "center",
+                        borderRadius: 10,
+                        background: "linear-gradient(160deg, rgba(43, 210, 201, 0.28), rgba(125, 224, 255, 0.2))",
+                        border: "1px solid rgba(125, 224, 255, 0.24)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <ProviderIcon provider={form.provider} />
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>
+                      {PROVIDER_LABELS[form.provider] || form.provider}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <ProviderTiles
+                  provider={form.provider}
+                  onSelect={(provider) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      provider,
+                      ...getProviderDefaults(provider, prev),
+                    }))
+                  }
+                />
+              )}
             </div>
 
-            <ProviderHelp provider={form.provider} region={form.region} />
+            {!editingId && <ProviderHelp provider={form.provider} region={form.region} />}
 
             <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
               Region
@@ -939,72 +1215,101 @@ export default function ConfigPage() {
               </label>
             )}
 
-            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
-              Access Key ID
-              <input
-                required
-                value={form.accessKeyId}
-                onChange={(e) => setForm((prev) => ({ ...prev, accessKeyId: e.target.value }))}
-                style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
-              />
-            </label>
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ padding: "14px", borderRadius: 12, border: "1px solid rgba(146, 184, 224, 0.16)", background: "rgba(14, 25, 41, 0.66)", display: "grid", gap: 12 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, color: "#041019", background: "#ffd28a" }}>
+                      STEP 2
+                    </span>
+                    <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.3, color: "#7de0ff", textTransform: "uppercase" }}>
+                      Credentials
+                    </div>
+                    <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, color: "#cfe4ff", background: "rgba(146, 184, 224, 0.12)", border: "1px solid rgba(146, 184, 224, 0.16)" }}>
+                      Required fields
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#9db4d1", marginTop: 4 }}>
+                    Keep the form focused on the minimum credentials needed to connect.
+                  </div>
+                </div>
 
-            <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
-              Secret Access Key
-              <input
-                required
-                type="password"
-                value={form.secretAccessKey}
-                onChange={(e) => setForm((prev) => ({ ...prev, secretAccessKey: e.target.value }))}
-                style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
-              />
-            </label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
+                    Access Key ID
+                    <input
+                      required={!form.hasAccessKeyId}
+                      value={form.accessKeyId}
+                      onChange={(e) => setForm((prev) => ({ ...prev, accessKeyId: e.target.value }))}
+                      placeholder={
+                        form.hasAccessKeyId
+                          ? "Stored securely. Leave blank to keep existing access key."
+                          : ""
+                      }
+                      style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+                    />
+                  </label>
 
-            {form.provider !== "localstack" && (
-              <>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#cfe4ff" }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(form.forcePathStyle)}
-                    onChange={(e) => setForm((prev) => ({ ...prev, forcePathStyle: e.target.checked }))}
-                  />
-                  Force Path Style
-                </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
+                    Secret Access Key
+                    <input
+                      required={!form.hasSecretAccessKey}
+                      type="password"
+                      value={form.secretAccessKey}
+                      onChange={(e) => setForm((prev) => ({ ...prev, secretAccessKey: e.target.value }))}
+                      placeholder={
+                        form.hasSecretAccessKey
+                          ? "Stored securely. Leave blank to keep existing secret key."
+                          : ""
+                      }
+                      style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
+                    />
+                  </label>
+                </div>
+
+                {editingId && (form.hasAccessKeyId || form.hasSecretAccessKey || form.hasSessionToken) && (
+                  <div style={{ marginTop: -2, fontSize: 12, color: "#9db4d1" }}>
+                    Stored credentials are hidden from the UI. Leave a field blank to keep the currently saved secret.
+                  </div>
+                )}
 
                 {form.provider === "aws" && (
-                  <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(146, 184, 224, 0.2)", background: "rgba(14, 25, 41, 0.72)" }}>
-                      <div style={{ fontSize: 12, color: "#dcecff", fontWeight: 700 }}>
-                        Paste AWS Export Snippet
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "12px", borderRadius: 10, border: "1px solid rgba(146, 184, 224, 0.2)", background: "rgba(14, 25, 41, 0.72)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontSize: 12, color: "#dcecff", fontWeight: 700 }}>
+                          AWS Export Paste
+                        </div>
+                        <div style={{ fontSize: 12, color: "#9db4d1", marginTop: 3 }}>
+                          Paste exported AWS variables to fill the credential fields quickly.
+                        </div>
                       </div>
-                      <textarea
-                        value={awsExportInput}
-                        onChange={(e) => {
-                          setAwsExportInput(e.target.value);
-                          setAwsExportStatus("");
-                        }}
-                        placeholder={[
-                          'export AWS_ACCESS_KEY_ID="..."',
-                          'export AWS_SECRET_ACCESS_KEY="..."',
-                          'export AWS_SESSION_TOKEN="..."',
-                          'export AWS_REGION="us-east-1"',
-                        ].join("\n")}
-                        rows={4}
-                        style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", resize: "vertical", color: "#dcecff", background: "rgba(10, 19, 33, 0.9)" }}
-                      />
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          onClick={applyAwsExportSnippet}
-                          style={{ border: "1px solid rgba(146, 184, 224, 0.25)", background: "rgba(10, 19, 33, 0.85)", color: "#dcecff", borderRadius: 8, padding: "6px 10px", fontSize: 12, cursor: "pointer" }}
-                        >
-                          Apply Snippet
-                        </button>
-                        {awsExportStatus && (
-                          <span style={{ fontSize: 12, color: "#9db4d1" }}>{awsExportStatus}</span>
-                        )}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={applyAwsExportSnippet}
+                        style={{ border: "1px solid rgba(146, 184, 224, 0.25)", background: "rgba(10, 19, 33, 0.85)", color: "#dcecff", borderRadius: 10, padding: "8px 12px", fontSize: 12, cursor: "pointer", fontWeight: 700 }}
+                      >
+                        Apply Snippet
+                      </button>
                     </div>
+                    <textarea
+                      value={awsExportInput}
+                      onChange={(e) => {
+                        setAwsExportInput(e.target.value);
+                        setAwsExportStatus("");
+                      }}
+                      placeholder={[
+                        'export AWS_ACCESS_KEY_ID="..."',
+                        'export AWS_SECRET_ACCESS_KEY="..."',
+                        'export AWS_SESSION_TOKEN="..."',
+                        'export AWS_REGION="us-east-1"',
+                      ].join("\n")}
+                      rows={4}
+                      style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", resize: "vertical", color: "#dcecff", background: "rgba(10, 19, 33, 0.9)" }}
+                    />
+                    {awsExportStatus && (
+                      <span style={{ fontSize: 12, color: "#9db4d1" }}>{awsExportStatus}</span>
+                    )}
 
                     <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
                       Session Token
@@ -1012,105 +1317,85 @@ export default function ConfigPage() {
                         type="password"
                         value={form.sessionToken || ""}
                         onChange={(e) => setForm((prev) => ({ ...prev, sessionToken: e.target.value }))}
-                        placeholder="Optional - for temporary credentials"
+                        placeholder={
+                          form.hasSessionToken
+                            ? "Stored securely. Leave blank to keep existing session token."
+                            : "Optional - for temporary credentials"
+                        }
                         style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
                       />
                     </label>
-
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
-                      Role ARN
-                      <input
-                        type="text"
-                        value={form.roleArn || ""}
-                        onChange={(e) => setForm((prev) => ({ ...prev, roleArn: e.target.value }))}
-                        placeholder="Optional - arn:aws:iam::123456789012:role/RoleName"
-                        style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
-                      />
-                    </label>
-
-                    <label style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13, color: "#cfe4ff" }}>
-                      External ID
-                      <input
-                        type="text"
-                        value={form.externalId || ""}
-                        onChange={(e) => setForm((prev) => ({ ...prev, externalId: e.target.value }))}
-                        placeholder="Optional - for cross-account access"
-                        style={{ border: "1px solid rgba(146, 184, 224, 0.25)", borderRadius: 8, padding: "8px 10px", fontSize: 13 }}
-                      />
-                    </label>
-                  </>
+                  </div>
                 )}
-              </>
-            )}
+              </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={testConnection}
-                disabled={testing || saving}
-                style={{
-                  border: "1px solid rgba(146, 184, 224, 0.25)",
-                  background: "rgba(10, 19, 33, 0.85)",
-                  color: "#dcecff",
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  fontSize: 13,
-                  cursor: testing || saving ? "not-allowed" : "pointer",
-                  opacity: testing || saving ? 0.7 : 1,
-                }}
-              >
-                {testing ? "Testing..." : "Test Connection"}
-              </button>
-              <button
-                type="submit"
-                disabled={saving || testing}
-                style={{
-                  border: "none",
-                  background: "#2bd2c9",
-                  color: "rgba(10, 19, 33, 0.85)",
-                  borderRadius: 8,
-                  padding: "8px 12px",
-                  fontSize: 13,
-                  cursor: saving || testing ? "not-allowed" : "pointer",
-                  opacity: saving || testing ? 0.7 : 1,
-                }}
-              >
-                {saving ? "Saving..." : editingId ? "Update Connection" : "Create Connection"}
-              </button>
-              {editingId && (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  style={{
-                    border: "1px solid rgba(146, 184, 224, 0.25)",
-                    background: "rgba(10, 19, 33, 0.85)",
-                    color: "#dcecff",
-                    borderRadius: 8,
-                    padding: "8px 12px",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel Edit
-                </button>
-              )}
-              {editingId && (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  style={{
-                    border: "1px solid rgba(146, 184, 224, 0.22)",
-                    background: "rgba(12, 22, 37, 0.75)",
-                    color: "#9db4d1",
-                    borderRadius: 8,
-                    padding: "8px 12px",
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
-                >
-                  Create New
-                </button>
-              )}
+              <div style={{ padding: "14px", borderRadius: 12, border: "1px solid rgba(43, 210, 201, 0.18)", background: "linear-gradient(180deg, rgba(12, 23, 38, 0.88), rgba(8, 18, 30, 0.92))", display: "grid", gap: 12 }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, color: "#041019", background: "#2bd2c9" }}>
+                      STEP 3
+                    </span>
+                    <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.3, color: "#7de0ff", textTransform: "uppercase" }}>
+                      Connection Controls
+                    </div>
+                    <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, color: "#cfe4ff", background: "rgba(146, 184, 224, 0.12)", border: "1px solid rgba(146, 184, 224, 0.16)" }}>
+                      Verify first
+                    </span>
+                    <span style={{ padding: "4px 8px", borderRadius: 999, fontSize: 11, color: "#cfe4ff", background: "rgba(43, 210, 201, 0.12)", border: "1px solid rgba(43, 210, 201, 0.16)" }}>
+                      Save second
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#9db4d1", marginTop: 4 }}>
+                    Test first, then save. Secondary actions stay separate so users do not confuse them with the primary flow.
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                  <button
+                    type="submit"
+                    disabled={saving || testing}
+                    style={{
+                      border: "none",
+                      background: "#2bd2c9",
+                      color: "rgba(10, 19, 33, 0.85)",
+                      borderRadius: 10,
+                      padding: "11px 14px",
+                      fontSize: 13,
+                      cursor: saving || testing ? "not-allowed" : "pointer",
+                      opacity: saving || testing ? 0.7 : 1,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {testing
+                      ? "Testing..."
+                      : saving
+                        ? "Saving..."
+                        : editingId
+                          ? "Test + Update Connection"
+                          : "Test + Create Connection"}
+                  </button>
+                </div>
+
+                {editingId && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      style={{
+                        border: "1px solid rgba(146, 184, 224, 0.25)",
+                        background: "rgba(10, 19, 33, 0.85)",
+                        color: "#dcecff",
+                        borderRadius: 10,
+                        padding: "8px 12px",
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Cancel Edit
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {testResult && (
@@ -1137,13 +1422,16 @@ export default function ConfigPage() {
 
             {!testResult?.ok && (
               <div style={{ fontSize: 12, color: "#7f4c00" }}>
-                Run Test Connection before creating or updating this profile.
+                This action will test first, then save only if the test passes.
               </div>
             )}
 
-            <div style={{ marginTop: 8, padding: "10px 12px", background: "rgba(43, 210, 201, 0.14)", borderRadius: 6, fontSize: 12, color: "#cde9ff" }}>
-              <strong>Active:</strong> {activeConnection ? `${activeConnection.name} (${PROVIDER_LABELS[activeConnection.provider] || activeConnection.provider})` : "None selected"}
-            </div>
+            {testResult?.ok && (
+              <div style={{ fontSize: 12, color: "#7df5c8" }}>
+                Test passed. You can now {editingId ? "update" : "create"} this connection.
+              </div>
+            )}
+
           </form>
         </div>
       </div>

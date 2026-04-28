@@ -1,6 +1,5 @@
 import { getS3Client } from "@/app/lib/s3";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -144,6 +143,7 @@ export async function GET(req) {
 
     // Handle Excel files
     if (isExcel) {
+      const XLSX = await import("xlsx");
       const workbook = XLSX.read(Buffer.from(buffer), { type: "buffer" });
       const sheets = {};
       for (const sheetName of workbook.SheetNames) {

@@ -69,7 +69,7 @@ export default function Home() {
           isSmallScreen={isSmallScreen}
           onTemporaryExpand={openSidebarTemporarily}
         />
-        <FileExplorer bucket={bucket} />
+        <FileExplorer bucket={bucket} onBucketChange={setBucket} />
       </div>
     </div>
   );

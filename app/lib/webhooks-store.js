@@ -1,7 +1,15 @@
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 
-const WEBHOOKS_FILE = path.join(process.cwd(), ".webhooks.json");
+const APP_DATA_DIR = path.join(os.homedir(), ".dockyard-s3-studio");
+const WEBHOOKS_FILE = path.join(APP_DATA_DIR, "webhooks.json");
+const LEGACY_WEBHOOKS_FILE = path.join(process.cwd(), ".webhooks.json");
+
+async function ensurePrivateAppDataDir() {
+  await fs.mkdir(APP_DATA_DIR, { recursive: true, mode: 0o700 });
+  await fs.chmod(APP_DATA_DIR, 0o700).catch(() => {});
+}
 
 async function readStore() {
   try {
@@ -12,12 +20,23 @@ async function readStore() {
     }
     return parsed;
   } catch {
-    return { webhooks: [] };
+    try {
+      const raw = await fs.readFile(LEGACY_WEBHOOKS_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed.webhooks) ? parsed : { webhooks: [] };
+    } catch {
+      return { webhooks: [] };
+    }
   }
 }
 
 async function writeStore(store) {
-  await fs.writeFile(WEBHOOKS_FILE, JSON.stringify(store, null, 2), "utf-8");
+  await ensurePrivateAppDataDir();
+  await fs.writeFile(WEBHOOKS_FILE, JSON.stringify(store, null, 2), {
+    encoding: "utf-8",
+    mode: 0o600,
+  });
+  await fs.chmod(WEBHOOKS_FILE, 0o600).catch(() => {});
 }
 
 export async function listWebhooks() {

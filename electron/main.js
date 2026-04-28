@@ -1,5 +1,6 @@
 const { app, BrowserWindow, dialog, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const { randomBytes } = require("crypto");
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -14,6 +15,66 @@ let nextServer = null;
 let nextServerApp = null;
 let nextServerLogTail = [];
 let updaterInitialized = false;
+const apiSessionToken = randomBytes(32).toString("hex");
+
+process.env.DOCKYARD_API_TOKEN = apiSessionToken;
+
+function isAllowedExternalUrl(rawUrl) {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === "https:" || parsed.protocol === "mailto:";
+  } catch {
+    return false;
+  }
+}
+
+function isAuthorizedApiRequest(req) {
+  const authHeader = req.headers.authorization || "";
+  const hostHeader = String(req.headers.host || "").toLowerCase();
+  const originHeader = req.headers.origin;
+  const fetchSiteHeader = String(
+    req.headers["sec-fetch-site"] || "",
+  ).toLowerCase();
+  const expectedAuth = `Bearer ${apiSessionToken}`;
+  const allowedHosts = new Set([
+    `127.0.0.1:${PROD_PORT}`,
+    `localhost:${PROD_PORT}`,
+    `[::1]:${PROD_PORT}`,
+  ]);
+
+  if (authHeader !== expectedAuth) {
+    return { ok: false, status: 401, error: "Missing or invalid API token" };
+  }
+
+  if (!allowedHosts.has(hostHeader)) {
+    return { ok: false, status: 403, error: "Unexpected host header" };
+  }
+
+  if (originHeader) {
+    try {
+      const origin = new URL(originHeader);
+      const allowedOrigin =
+        (origin.protocol === "http:" || origin.protocol === "https:") &&
+        allowedHosts.has(origin.host.toLowerCase());
+
+      if (!allowedOrigin) {
+        return { ok: false, status: 403, error: "Unexpected origin" };
+      }
+    } catch {
+      return { ok: false, status: 403, error: "Malformed origin" };
+    }
+  }
+
+  if (
+    fetchSiteHeader &&
+    fetchSiteHeader !== "same-origin" &&
+    fetchSiteHeader !== "none"
+  ) {
+    return { ok: false, status: 403, error: "Unexpected fetch site" };
+  }
+
+  return { ok: true };
+}
 
 async function showManualUpdateDialog(mainWindow, version, reason) {
   try {
@@ -201,6 +262,18 @@ async function startBundledNextServer() {
   const requestHandler = nextServerApp.getRequestHandler();
 
   nextServer = http.createServer((req, res) => {
+    if (req.url?.startsWith("/api/")) {
+      const authorization = isAuthorizedApiRequest(req);
+
+      if (!authorization.ok) {
+        res.writeHead(authorization.status, {
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ error: authorization.error }));
+        return;
+      }
+    }
+
     requestHandler(req, res);
   });
 
@@ -228,6 +301,7 @@ function createWindow() {
     title: "Dockyard S3 Studio",
     autoHideMenuBar: true,
     webPreferences: {
+      additionalArguments: [`--dockyard-api-token=${apiSessionToken}`],
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
@@ -236,8 +310,21 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isAllowedExternalUrl(url)) {
+      shell.openExternal(url);
+    }
     return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    if (url === mainWindow.webContents.getURL()) {
+      return;
+    }
+
+    event.preventDefault();
+    if (isAllowedExternalUrl(url)) {
+      shell.openExternal(url);
+    }
   });
 
   return mainWindow;

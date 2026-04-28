@@ -64,7 +64,14 @@
       "assets/**",
       "next.config.js",
       "jsconfig.json",
-      "package.json"
+      "package.json",
+      "!.next/cache/**",
+      "!README.md",
+      "!CODEBASE_AUDIT_REPORT.md",
+      "!scripts/**",
+      "!public/pdf.worker.min.mjs",
+      "!electron/icons/icon.iconset/**",
+      "!**/*.map"
     ],
     "asar": true,
     "afterSign": "electron/notarize.js",

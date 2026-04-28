@@ -3,6 +3,7 @@ import {
   listWebhooks,
   removeWebhook,
 } from "@/app/lib/webhooks-store";
+import { validateOutboundUrl } from "@/app/lib/network-policy";
 
 export async function GET() {
   const webhooks = await listWebhooks();
@@ -14,7 +15,11 @@ export async function POST(req) {
   if (!url) {
     return Response.json({ error: "url is required" }, { status: 400 });
   }
-  const webhook = await addWebhook({ url, event, enabled });
+  const validation = validateOutboundUrl(url);
+  if (!validation.ok) {
+    return Response.json({ error: validation.error }, { status: 400 });
+  }
+  const webhook = await addWebhook({ url: validation.url, event, enabled });
   return Response.json({ success: true, webhook });
 }
 

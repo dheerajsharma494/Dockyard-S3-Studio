@@ -1,4 +1,5 @@
 import { getWebhookById } from "@/app/lib/webhooks-store";
+import { validateOutboundUrl } from "@/app/lib/network-policy";
 
 export async function POST(req) {
   try {
@@ -14,9 +15,16 @@ export async function POST(req) {
       return Response.json({ error: "id or url is required" }, { status: 400 });
     }
 
-    const response = await fetch(targetUrl, {
+    const validation = validateOutboundUrl(targetUrl);
+    if (!validation.ok) {
+      return Response.json({ error: validation.error }, { status: 400 });
+    }
+
+    const response = await fetch(validation.url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(5000),
       body: JSON.stringify({
         event,
         timestamp: new Date().toISOString(),

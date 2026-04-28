@@ -2,6 +2,9 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+const SUPPORT_EMAIL =
+  process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "dheerajs.work@gmail.com";
+
 export default function BucketList({
   selected,
   onSelect,
@@ -272,27 +275,43 @@ export default function BucketList({
             href="/config"
             style={{
               marginTop: 10,
-              display: "block",
-              color: "#7fded7",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              color: "#d9fffb",
               fontSize: 12,
               textDecoration: "none",
-              fontWeight: 600,
+              fontWeight: 700,
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid rgba(127, 222, 215, 0.35)",
+              background: "linear-gradient(160deg, rgba(32, 77, 84, 0.55), rgba(13, 32, 44, 0.75))",
+              boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.06)",
             }}
           >
-            Connection Control
+            <span>Connection Control</span>
+            <span aria-hidden="true" style={{ fontSize: 11, color: "#7fded7" }}>→</span>
           </Link>
           <Link
             href="/tools"
             style={{
               marginTop: 6,
-              display: "block",
-              color: "#ffd1a8",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              color: "#ffe6cf",
               fontSize: 12,
               textDecoration: "none",
-              fontWeight: 600,
+              fontWeight: 700,
+              padding: "8px 10px",
+              borderRadius: 10,
+              border: "1px solid rgba(255, 209, 168, 0.34)",
+              background: "linear-gradient(160deg, rgba(95, 61, 34, 0.48), rgba(28, 24, 37, 0.78))",
+              boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05)",
             }}
           >
-            Security + Automation
+            <span>Security + Automation</span>
+            <span aria-hidden="true" style={{ fontSize: 11, color: "#ffd1a8" }}>→</span>
           </Link>
         </div>}
       </div>
@@ -379,6 +398,44 @@ export default function BucketList({
 
       {!isCollapsed && (
         <div style={{ marginTop: "auto", padding: "12px 10px 14px", borderTop: "1px solid rgba(146, 184, 224, 0.15)" }}>
+          <div
+            style={{
+              marginBottom: 10,
+              padding: "10px",
+              borderRadius: 10,
+              border: "1px solid rgba(146, 184, 224, 0.22)",
+              background: "rgba(10, 18, 30, 0.68)",
+            }}
+          >
+            <div style={{ fontSize: 11, color: "#84a5c7", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 700 }}>
+              Help & Feedback
+            </div>
+            <a
+              href={`mailto:${SUPPORT_EMAIL}?subject=Dockyard%20S3%20Studio%20Feedback`}
+              style={{
+                marginTop: 8,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                textDecoration: "none",
+                color: "#d9fffb",
+                fontSize: 12,
+                fontWeight: 700,
+                padding: "8px 10px",
+                borderRadius: 10,
+                border: "1px solid rgba(127, 222, 215, 0.32)",
+                background:
+                  "linear-gradient(160deg, rgba(32, 77, 84, 0.55), rgba(13, 32, 44, 0.75))",
+              }}
+              title={`Send email to ${SUPPORT_EMAIL}`}
+            >
+              <span>Email Support</span>
+              <span aria-hidden="true" style={{ fontSize: 11, color: "#7fded7" }}>
+                ↗
+              </span>
+            </a>
+          </div>
+
           <button
             type="button"
             onClick={() => window.open("https://ko-fi.com/dheerajsharma494", "_blank")}

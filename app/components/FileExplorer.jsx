@@ -9,12 +9,23 @@ const MULTIPART_PART_SIZE = 10 * 1024 * 1024;
 const THEME_STORAGE_KEY = "dockyard-theme-mode";
 const HELP_SEEN_STORAGE_KEY = "dockyard-help-seen";
 
-export default function FileExplorer({ bucket }) {
+export default function FileExplorer({ bucket, onBucketChange }) {
   const [data, setData] = useState({ folders: [], files: [] });
   const [fetchError, setFetchError] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [searchScope, setSearchScope] = useState("current");
+  const [availableSearchBuckets, setAvailableSearchBuckets] = useState([]);
+  const [selectedSearchBuckets, setSelectedSearchBuckets] = useState([]);
+  const [searchBucketPickerLoading, setSearchBucketPickerLoading] = useState(false);
+  const [searchBucketPickerError, setSearchBucketPickerError] = useState(null);
+  const [activeBucketFilter, setActiveBucketFilter] = useState("all");
+  const [activeStorageClassFilter, setActiveStorageClassFilter] = useState("all");
+  const [crossBucketResults, setCrossBucketResults] = useState([]);
+  const [crossBucketSearchLoading, setCrossBucketSearchLoading] = useState(false);
+  const [crossBucketSearchError, setCrossBucketSearchError] = useState(null);
+  const [pendingCrossBucketNavigation, setPendingCrossBucketNavigation] = useState(null);
   const [viewMode, setViewMode] = useState("list");
   const [refreshToken, setRefreshToken] = useState(0);
   const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, item: null });
@@ -57,6 +68,44 @@ export default function FileExplorer({ bucket }) {
   };
 
   const prefix = history[history.length - 1] ?? "";
+  const normalizedSearchText = searchText.trim();
+  const isCrossBucketSearchActive =
+    searchScope === "all" && normalizedSearchText.length >= 2;
+
+  const bucketFilterOptions = Array.from(
+    new Set(crossBucketResults.map((result) => result.bucket).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
+
+  const bucketCounts = crossBucketResults.reduce((acc, result) => {
+    if (!result.bucket) return acc;
+    acc[result.bucket] = (acc[result.bucket] || 0) + 1;
+    return acc;
+  }, {});
+
+  const storageClassFilterOptions = Array.from(
+    new Set(
+      crossBucketResults
+        .map((result) => result.storageClass || "STANDARD")
+        .filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
+  const storageClassCounts = crossBucketResults.reduce((acc, result) => {
+    const storageClass = result.storageClass || "STANDARD";
+    acc[storageClass] = (acc[storageClass] || 0) + 1;
+    return acc;
+  }, {});
+
+  const filteredCrossBucketResults = crossBucketResults.filter((result) => {
+    if (activeBucketFilter !== "all" && result.bucket !== activeBucketFilter) {
+      return false;
+    }
+    const storageClass = result.storageClass || "STANDARD";
+    if (activeStorageClassFilter !== "all" && storageClass !== activeStorageClassFilter) {
+      return false;
+    }
+    return true;
+  });
 
   const formatBytes = (size) => {
     if (typeof size !== "number") return "-";
@@ -150,6 +199,70 @@ export default function FileExplorer({ bucket }) {
     setSelectedKeys([]);
     setIsEditMode(false);
   }, [bucket]);
+
+  useEffect(() => {
+    if (!pendingCrossBucketNavigation) return;
+    if (bucket !== pendingCrossBucketNavigation.bucket) return;
+
+    const nextPrefix = pendingCrossBucketNavigation.prefix || "";
+    setHistory(nextPrefix ? [nextPrefix] : []);
+    setCurrentPage(1);
+    setSearchText("");
+    setPendingCrossBucketNavigation(null);
+  }, [bucket, pendingCrossBucketNavigation]);
+
+  useEffect(() => {
+    if (searchScope !== "all") return;
+
+    let ignore = false;
+    setSearchBucketPickerLoading(true);
+    setSearchBucketPickerError(null);
+
+    fetch("/api/buckets", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) {
+          const payload = await res.json().catch(() => ({}));
+          throw new Error(payload.error || `Failed to load buckets (${res.status})`);
+        }
+        return res.json();
+      })
+      .then((items) => {
+        if (ignore) return;
+        const names = Array.isArray(items)
+          ? items.map((item) => item?.Name).filter(Boolean)
+          : [];
+        setAvailableSearchBuckets(names);
+        setSearchBucketPickerLoading(false);
+      })
+      .catch((error) => {
+        if (ignore) return;
+        setAvailableSearchBuckets([]);
+        setSearchBucketPickerError(error.message || "Failed to load bucket picker");
+        setSearchBucketPickerLoading(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [searchScope, refreshToken]);
+
+  useEffect(() => {
+    setSelectedSearchBuckets((prev) =>
+      prev.filter((bucketName) => availableSearchBuckets.includes(bucketName)),
+    );
+  }, [availableSearchBuckets]);
+
+  useEffect(() => {
+    if (activeBucketFilter === "all") return;
+    if (bucketFilterOptions.includes(activeBucketFilter)) return;
+    setActiveBucketFilter("all");
+  }, [bucketFilterOptions, activeBucketFilter]);
+
+  useEffect(() => {
+    if (activeStorageClassFilter === "all") return;
+    if (storageClassFilterOptions.includes(activeStorageClassFilter)) return;
+    setActiveStorageClassFilter("all");
+  }, [storageClassFilterOptions, activeStorageClassFilter]);
 
   useEffect(() => {
     if (!bucket || typeof window === "undefined") return;
@@ -368,6 +481,52 @@ export default function FileExplorer({ bucket }) {
   }, [bucket, prefix, refreshToken]);
 
   useEffect(() => {
+    if (!isCrossBucketSearchActive) {
+      setCrossBucketResults([]);
+      setCrossBucketSearchLoading(false);
+      setCrossBucketSearchError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setCrossBucketSearchLoading(true);
+    setCrossBucketSearchError(null);
+
+    const query = new URLSearchParams({
+      query: normalizedSearchText,
+      limit: "300",
+    });
+
+    if (selectedSearchBuckets.length > 0) {
+      query.set("buckets", selectedSearchBuckets.join(","));
+    }
+
+    fetch(`/api/search?${query.toString()}`, {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (res) => {
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(payload.error || `Search failed (${res.status})`);
+        }
+        return payload;
+      })
+      .then((payload) => {
+        setCrossBucketResults(Array.isArray(payload.results) ? payload.results : []);
+        setCrossBucketSearchLoading(false);
+      })
+      .catch((error) => {
+        if (error.name === "AbortError") return;
+        setCrossBucketResults([]);
+        setCrossBucketSearchError(error.message || "Cross-bucket search failed");
+        setCrossBucketSearchLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [isCrossBucketSearchActive, normalizedSearchText, selectedSearchBuckets]);
+
+  useEffect(() => {
     const updateLayoutMode = () => {
       const width = window.innerWidth;
       setIsCompactLayout(width < 980);
@@ -393,6 +552,25 @@ export default function FileExplorer({ bucket }) {
   const navigateBack = () => {
     setHistory(h => h.slice(0, -1));
     setCurrentPage(1);
+  };
+
+  const openCrossBucketResult = (result) => {
+    const key = result?.key || "";
+    const slashIndex = key.lastIndexOf("/");
+    const destinationPrefix = slashIndex >= 0 ? key.slice(0, slashIndex + 1) : "";
+
+    if (result.bucket === bucket) {
+      setHistory(destinationPrefix ? [destinationPrefix] : []);
+      setCurrentPage(1);
+      setSearchText("");
+      return;
+    }
+
+    setPendingCrossBucketNavigation({
+      bucket: result.bucket,
+      prefix: destinationPrefix,
+    });
+    onBucketChange?.(result.bucket);
   };
 
   const openContextMenu = (event, item) => {
@@ -1652,7 +1830,7 @@ export default function FileExplorer({ bucket }) {
             type="text"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            placeholder="Search files and folders"
+            placeholder={searchScope === "all" ? "Search objects across all buckets (min 2 chars)" : "Search files and folders"}
             style={{
               width: "100%",
               border: theme.searchBorder,
@@ -1688,6 +1866,132 @@ export default function FileExplorer({ bucket }) {
             </button>
           )}
         </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          <button
+            type="button"
+            onClick={() => setSearchScope("current")}
+            style={{
+              border: theme.controlBorder,
+              borderRadius: 8,
+              padding: isPhoneLayout ? "6px 8px" : "7px 10px",
+              fontSize: isPhoneLayout ? 11 : 12,
+              fontWeight: 700,
+              background: searchScope === "current" ? "linear-gradient(135deg, rgba(43, 210, 201, 0.75), rgba(125, 224, 255, 0.68))" : theme.controlBg,
+              color: searchScope === "current" ? "#02131d" : theme.controlText,
+              cursor: "pointer",
+            }}
+            title="Search only in current bucket"
+          >
+            This Bucket
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchScope("all")}
+            style={{
+              border: theme.controlBorder,
+              borderRadius: 8,
+              padding: isPhoneLayout ? "6px 8px" : "7px 10px",
+              fontSize: isPhoneLayout ? 11 : 12,
+              fontWeight: 700,
+              background: searchScope === "all" ? "linear-gradient(135deg, rgba(43, 210, 201, 0.75), rgba(125, 224, 255, 0.68))" : theme.controlBg,
+              color: searchScope === "all" ? "#02131d" : theme.controlText,
+              cursor: "pointer",
+            }}
+            title="Search objects across all buckets"
+          >
+            All Buckets
+          </button>
+        </div>
+
+        {searchScope === "all" && (
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-start",
+              gap: 4,
+              minWidth: isPhoneLayout ? 150 : 190,
+              flex: isCompactLayout ? "1 1 100%" : "0 0 auto",
+            }}
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, color: theme.mutedText, textTransform: "uppercase" }}>
+              Search In Buckets
+            </div>
+            <select
+              multiple
+              value={selectedSearchBuckets}
+              onChange={(event) => {
+                const next = Array.from(event.target.selectedOptions).map((option) => option.value);
+                setSelectedSearchBuckets(next);
+              }}
+              style={{
+                width: "100%",
+                minHeight: isPhoneLayout ? 70 : 76,
+                border: theme.controlBorder,
+                borderRadius: 8,
+                padding: "6px 8px",
+                fontSize: isPhoneLayout ? 11 : 12,
+                background: theme.controlBg,
+                color: theme.controlText,
+              }}
+              title="Pick one or more buckets. If none are selected, search runs across all buckets."
+            >
+              {availableSearchBuckets.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setSelectedSearchBuckets([...availableSearchBuckets])}
+                disabled={availableSearchBuckets.length === 0}
+                style={{
+                  border: theme.controlBorder,
+                  borderRadius: 8,
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: theme.controlBg,
+                  color: theme.controlText,
+                  cursor: availableSearchBuckets.length === 0 ? "not-allowed" : "pointer",
+                }}
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedSearchBuckets([])}
+                style={{
+                  border: theme.controlBorder,
+                  borderRadius: 8,
+                  padding: "4px 8px",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  background: theme.controlBg,
+                  color: theme.controlText,
+                  cursor: "pointer",
+                }}
+              >
+                Search All Buckets
+              </button>
+              <span style={{ fontSize: 11, color: theme.mutedText }}>
+                {searchBucketPickerLoading
+                  ? "Loading buckets..."
+                  : selectedSearchBuckets.length > 0
+                    ? `${selectedSearchBuckets.length} selected`
+                    : "No bucket filter"}
+              </span>
+            </div>
+            {searchBucketPickerError && (
+              <div style={{ fontSize: 11, color: isLightTheme ? "#b8402f" : "#ff8e83" }}>
+                {searchBucketPickerError}
+              </div>
+            )}
+          </div>
+        )}
 
         <div
           style={{
@@ -1928,7 +2232,7 @@ export default function FileExplorer({ bucket }) {
       {/* Content */}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isPhoneLayout ? "10px 8px" : isCompactLayout ? "14px 12px" : "20px 24px", color: theme.contentText }}>
         {/* Pagination Controls and Items Per Page (Top) */}
-        {allItems.length > 0 && (
+        {!isCrossBucketSearchActive && allItems.length > 0 && (
           <div style={{
             display: "flex",
             alignItems: "center",
@@ -2082,7 +2386,156 @@ export default function FileExplorer({ bucket }) {
           </div>
         )}
 
-        {loading ? (
+        {isCrossBucketSearchActive ? (
+          <div
+            style={{
+              border: theme.listBorder,
+              borderRadius: 10,
+              overflow: "hidden",
+              background: isLightTheme ? "rgba(248, 252, 255, 0.95)" : "rgba(10, 18, 30, 0.62)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                padding: "10px 12px",
+                borderBottom: theme.listHeaderBorder,
+                background: theme.listHeaderBg,
+              }}
+            >
+              <div style={{ fontSize: 12, fontWeight: 700, color: theme.listHeaderText }}>
+                Cross-bucket search: "{normalizedSearchText}"
+              </div>
+              <div style={{ fontSize: 11, color: theme.mutedText }}>
+                {crossBucketSearchLoading ? "Searching..." : `${filteredCrossBucketResults.length} shown / ${crossBucketResults.length} found`}
+              </div>
+            </div>
+
+            {!crossBucketSearchError && (
+              <div style={{ padding: "10px 12px", borderBottom: theme.listHeaderBorder, display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, color: theme.mutedText, fontWeight: 700 }}>Bucket:</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveBucketFilter("all")}
+                    style={{
+                      border: theme.controlBorder,
+                      borderRadius: 999,
+                      padding: "3px 9px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: activeBucketFilter === "all" ? "linear-gradient(135deg, rgba(43, 210, 201, 0.75), rgba(125, 224, 255, 0.68))" : theme.controlBg,
+                      color: activeBucketFilter === "all" ? "#02131d" : theme.controlText,
+                      cursor: "pointer",
+                    }}
+                  >
+                    All ({crossBucketResults.length})
+                  </button>
+                  {bucketFilterOptions.map((bucketName) => (
+                    <button
+                      key={bucketName}
+                      type="button"
+                      onClick={() => setActiveBucketFilter(bucketName)}
+                      style={{
+                        border: theme.controlBorder,
+                        borderRadius: 999,
+                        padding: "3px 9px",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background: activeBucketFilter === bucketName ? "linear-gradient(135deg, rgba(43, 210, 201, 0.75), rgba(125, 224, 255, 0.68))" : theme.controlBg,
+                        color: activeBucketFilter === bucketName ? "#02131d" : theme.controlText,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {bucketName} ({bucketCounts[bucketName] || 0})
+                    </button>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, color: theme.mutedText, fontWeight: 700 }}>Storage:</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveStorageClassFilter("all")}
+                    style={{
+                      border: theme.controlBorder,
+                      borderRadius: 999,
+                      padding: "3px 9px",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      background: activeStorageClassFilter === "all" ? "linear-gradient(135deg, rgba(43, 210, 201, 0.75), rgba(125, 224, 255, 0.68))" : theme.controlBg,
+                      color: activeStorageClassFilter === "all" ? "#02131d" : theme.controlText,
+                      cursor: "pointer",
+                    }}
+                  >
+                    All ({crossBucketResults.length})
+                  </button>
+                  {storageClassFilterOptions.map((storageClass) => (
+                    <button
+                      key={storageClass}
+                      type="button"
+                      onClick={() => setActiveStorageClassFilter(storageClass)}
+                      style={{
+                        border: theme.controlBorder,
+                        borderRadius: 999,
+                        padding: "3px 9px",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background: activeStorageClassFilter === storageClass ? "linear-gradient(135deg, rgba(43, 210, 201, 0.75), rgba(125, 224, 255, 0.68))" : theme.controlBg,
+                        color: activeStorageClassFilter === storageClass ? "#02131d" : theme.controlText,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {storageClass} ({storageClassCounts[storageClass] || 0})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {crossBucketSearchError && (
+              <div style={{ padding: "12px", color: isLightTheme ? "#b8402f" : "#ff8e83", fontSize: 12 }}>
+                {crossBucketSearchError}
+              </div>
+            )}
+
+            {!crossBucketSearchError && !crossBucketSearchLoading && filteredCrossBucketResults.length === 0 && (
+              <div style={{ padding: "12px", color: theme.mutedText, fontSize: 12 }}>
+                No objects matched this query across your buckets.
+              </div>
+            )}
+
+            {!crossBucketSearchError && filteredCrossBucketResults.map((result) => (
+              <button
+                key={`${result.bucket}:${result.key}`}
+                type="button"
+                onClick={() => openCrossBucketResult(result)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  border: "none",
+                  borderBottom: theme.listHeaderBorder,
+                  background: "transparent",
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 4,
+                }}
+              >
+                <span style={{ color: isLightTheme ? "#174066" : "#dcecff", fontSize: 13, fontWeight: 600, wordBreak: "break-all" }}>
+                  {result.key}
+                </span>
+                <span style={{ color: theme.mutedText, fontSize: 11 }}>
+                  Bucket: {result.bucket} | Size: {formatBytes(Number(result.size || 0))}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : loading ? (
           <div style={{ color: theme.softText, fontSize: 14 }}>Loading...</div>
         ) : fetchError ? (
           <div style={{

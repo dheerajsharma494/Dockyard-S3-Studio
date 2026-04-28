@@ -33,6 +33,69 @@ function normalizePrefix(prefix) {
   return prefix.endsWith("/") ? prefix : `${prefix}/`;
 }
 
+function decodeObjectKey(key) {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    return key;
+  }
+}
+
+function normalizeRelativeObjectKey(key) {
+  const decodedKey = decodeObjectKey(String(key || "")).replace(/\\/g, "/");
+
+  if (
+    !decodedKey ||
+    decodedKey.startsWith("/") ||
+    /^[A-Za-z]:/.test(decodedKey)
+  ) {
+    throw new Error("Object key resolves outside the selected local folder");
+  }
+
+  const rawParts = decodedKey.split("/");
+  if (
+    rawParts.some((part) => part.length === 0 || part === "." || part === "..")
+  ) {
+    throw new Error("Object key resolves outside the selected local folder");
+  }
+
+  const normalized = path.posix.normalize(decodedKey);
+  if (
+    normalized === "." ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    normalized.startsWith("/") ||
+    /^[A-Za-z]:/.test(normalized)
+  ) {
+    throw new Error("Object key resolves outside the selected local folder");
+  }
+
+  return normalized;
+}
+
+function resolveDownloadDestination(rootPath, key, normalizedPrefix) {
+  const relativeKey = normalizedPrefix
+    ? key.slice(normalizedPrefix.length)
+    : key;
+  const safeRelativeKey = normalizeRelativeObjectKey(relativeKey);
+  const destination = path.resolve(
+    rootPath,
+    safeRelativeKey.split("/").join(path.sep),
+  );
+
+  if (
+    destination !== rootPath &&
+    !destination.startsWith(`${rootPath}${path.sep}`)
+  ) {
+    throw new Error("Object key resolves outside the selected local folder");
+  }
+
+  return {
+    relativeKey: safeRelativeKey,
+    destination,
+  };
+}
+
 async function listAllObjects(s3, bucket, prefix) {
   const objects = [];
   let continuationToken;
@@ -187,9 +250,12 @@ export async function POST(req) {
       );
 
       const plan = fileObjects.map((obj) => {
-        const relativeKey = obj.Key.replace(normalizedPrefix, "");
-        const destination = path.join(resolvedLocalPath, relativeKey);
-        return { key: obj.Key, localPath: destination };
+        const { relativeKey, destination } = resolveDownloadDestination(
+          resolvedLocalPath,
+          obj.Key,
+          normalizedPrefix,
+        );
+        return { key: obj.Key, relativeKey, localPath: destination };
       });
 
       if (dryRun) {

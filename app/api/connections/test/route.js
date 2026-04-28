@@ -1,4 +1,5 @@
 import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
+import { getConnectionById } from "@/app/lib/connections-store";
 
 function normalizeEndpoint(endpoint) {
   const value = (endpoint || "").trim();
@@ -70,12 +71,25 @@ function describeFailure(error) {
 export async function POST(req) {
   try {
     const payload = await req.json();
+    const existingConnection = payload?.id
+      ? await getConnectionById(payload.id)
+      : null;
+    const resolvedPayload = {
+      ...existingConnection,
+      ...payload,
+      accessKeyId:
+        payload?.accessKeyId || existingConnection?.accessKeyId || "",
+      secretAccessKey:
+        payload?.secretAccessKey || existingConnection?.secretAccessKey || "",
+      sessionToken:
+        payload?.sessionToken || existingConnection?.sessionToken || "",
+    };
 
     if (
-      !payload?.provider ||
-      !payload?.region ||
-      !payload?.accessKeyId ||
-      !payload?.secretAccessKey
+      !resolvedPayload?.provider ||
+      !resolvedPayload?.region ||
+      !resolvedPayload?.accessKeyId ||
+      !resolvedPayload?.secretAccessKey
     ) {
       return Response.json(
         {
@@ -87,7 +101,7 @@ export async function POST(req) {
       );
     }
 
-    if (payload.provider !== "aws" && !payload.endpoint) {
+    if (resolvedPayload.provider !== "aws" && !resolvedPayload.endpoint) {
       return Response.json(
         {
           ok: false,
@@ -97,7 +111,7 @@ export async function POST(req) {
       );
     }
 
-    const client = new S3Client(buildClientConfig(payload));
+    const client = new S3Client(buildClientConfig(resolvedPayload));
     await client.send(new ListBucketsCommand({}));
 
     return Response.json({ ok: true, message: "Connection successful." });
