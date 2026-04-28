@@ -54,6 +54,7 @@ export default function FileExplorer({ bucket, onBucketChange }) {
   const [previewVideoUrl, setPreviewVideoUrl] = useState(null);
   const [previewExcelData, setPreviewExcelData] = useState(null);
   const [previewPdfUrl, setPreviewPdfUrl] = useState(null);
+  const [desktopVersion, setDesktopVersion] = useState("");
   const previewPdfObjectUrlRef = useRef(null);
   const fileInputRef = useRef(null);
   const directoryInputRef = useRef(null);
@@ -191,6 +192,11 @@ export default function FileExplorer({ bucket, onBucketChange }) {
     uploadAbortControllersRef.current = [];
     setUploadStatus("Cancelling uploads...");
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setDesktopVersion(window.dockyardDesktop?.version || "");
+  }, []);
 
   useEffect(() => {
     setHistory([]);
@@ -573,6 +579,29 @@ export default function FileExplorer({ bucket, onBucketChange }) {
     onBucketChange?.(result.bucket);
   };
 
+  const saveDesktopDownload = async (downloadUrl, filename) => {
+    const desktopBridge =
+      typeof window !== "undefined" ? window.dockyardDesktop : null;
+
+    if (!desktopBridge?.downloadFile) {
+      return null;
+    }
+
+    return desktopBridge.downloadFile(downloadUrl, filename);
+  };
+
+  const saveDesktopBlob = async (filename, blob) => {
+    const desktopBridge =
+      typeof window !== "undefined" ? window.dockyardDesktop : null;
+
+    if (!desktopBridge?.saveFile) {
+      return null;
+    }
+
+    const bytes = Array.from(new Uint8Array(await blob.arrayBuffer()));
+    return desktopBridge.saveFile(filename, bytes);
+  };
+
   const openContextMenu = (event, item) => {
     event.preventDefault();
     setMenuState({ visible: true, x: event.clientX, y: event.clientY, item });
@@ -689,6 +718,20 @@ export default function FileExplorer({ bucket, onBucketChange }) {
     }
 
     if (action === "download") {
+      const result = await saveDesktopDownload(
+        `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(item.fullName)}`,
+        item.label,
+      );
+
+      if (result) {
+        openResultModal({
+          title: "Download",
+          content: `Saved to ${result.savePath}`,
+          copyText: result.savePath,
+        });
+        return;
+      }
+
       window.open(`/api/download?bucket=${bucket}&key=${encodeURIComponent(item.fullName)}`, "_blank");
       return;
     }
@@ -1134,6 +1177,16 @@ export default function FileExplorer({ bucket, onBucketChange }) {
   };
 
   const downloadSingleKey = async (key) => {
+    const fileName = key.split("/").filter(Boolean).pop() || "download";
+    const desktopResult = await saveDesktopDownload(
+      `/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}`,
+      fileName,
+    );
+
+    if (desktopResult) {
+      return desktopResult;
+    }
+
     const res = await fetch(`/api/download?bucket=${encodeURIComponent(bucket)}&key=${encodeURIComponent(key)}`);
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -1144,7 +1197,7 @@ export default function FileExplorer({ bucket, onBucketChange }) {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = key.split("/").filter(Boolean).pop() || "download";
+    anchor.download = fileName;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -1196,10 +1249,22 @@ export default function FileExplorer({ bucket, onBucketChange }) {
       }
 
       const blob = await res.blob();
+      const archiveFileName = `s3-download-${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
+      const desktopResult = await saveDesktopBlob(archiveFileName, blob).catch(() => null);
+
+      if (desktopResult) {
+        openResultModal({
+          title: "Download",
+          content: `ZIP saved to ${desktopResult.savePath}`,
+          copyText: desktopResult.savePath,
+        });
+        return;
+      }
+
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = `s3-download-${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
+      anchor.download = archiveFileName;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -1714,7 +1779,7 @@ export default function FileExplorer({ bucket, onBucketChange }) {
           <span className="glyph">DS</span>
           <span>
             <span className="name" style={{ display: "block" }}>Dockyard S3 Studio</span>
-            <span className="tag">Bucket Explorer</span>
+            <span className="tag">Bucket Explorer{desktopVersion ? ` • v${desktopVersion}` : ""}</span>
           </span>
         </div>
         {/* Bucket name + mode pill */}

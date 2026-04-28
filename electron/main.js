@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { autoUpdater } = require("electron-updater");
 const { randomBytes } = require("crypto");
 const http = require("http");
@@ -19,6 +19,24 @@ let apiHeaderInjectionInstalled = false;
 const apiSessionToken = randomBytes(32).toString("hex");
 
 process.env.DOCKYARD_API_TOKEN = apiSessionToken;
+
+function getUniqueDownloadPath(fileName) {
+  const downloadsDir = app.getPath("downloads");
+  const safeName = path.basename(fileName || "download");
+  const parsed = path.parse(safeName);
+  const baseName = parsed.name || "download";
+  const extension = parsed.ext || "";
+
+  let candidate = path.join(downloadsDir, `${baseName}${extension}`);
+  let index = 1;
+
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(downloadsDir, `${baseName} (${index})${extension}`);
+    index += 1;
+  }
+
+  return candidate;
+}
 
 function isAllowedExternalUrl(rawUrl) {
   try {
@@ -103,6 +121,73 @@ function installApiAuthHeaderInjection(session) {
     callback({ requestHeaders });
   });
 }
+
+ipcMain.handle("dockyard:download-file", async (event, payload = {}) => {
+  const sender = event.sender;
+  const senderUrl = sender.getURL();
+  const targetUrl = new URL(payload.url || "", senderUrl);
+  const allowedOrigin = new URL(senderUrl).origin;
+
+  if (
+    targetUrl.origin !== allowedOrigin ||
+    !targetUrl.pathname.startsWith("/api/download")
+  ) {
+    throw new Error("Only local download endpoints are allowed");
+  }
+
+  return await new Promise((resolve, reject) => {
+    const session = sender.session;
+
+    const onWillDownload = (_downloadEvent, item, webContents) => {
+      if (webContents.id !== sender.id) {
+        return;
+      }
+
+      session.removeListener("will-download", onWillDownload);
+
+      const preferredName = path.basename(
+        payload.filename || item.getFilename() || "download",
+      );
+      const savePath = getUniqueDownloadPath(preferredName);
+      item.setSavePath(savePath);
+
+      item.once("done", (_event, state) => {
+        if (state === "completed") {
+          resolve({
+            ok: true,
+            savePath,
+            downloadsDir: app.getPath("downloads"),
+          });
+          return;
+        }
+
+        reject(new Error(`Download ${state}`));
+      });
+    };
+
+    session.on("will-download", onWillDownload);
+
+    try {
+      sender.downloadURL(targetUrl.toString());
+    } catch (error) {
+      session.removeListener("will-download", onWillDownload);
+      reject(error);
+    }
+  });
+});
+
+ipcMain.handle("dockyard:save-file", async (_event, payload = {}) => {
+  const fileName = path.basename(payload.filename || "download");
+  const savePath = getUniqueDownloadPath(fileName);
+  const bytes = payload.bytes;
+
+  if (!Array.isArray(bytes)) {
+    throw new Error("Invalid file payload");
+  }
+
+  await fs.promises.writeFile(savePath, Buffer.from(bytes));
+  return { ok: true, savePath, downloadsDir: app.getPath("downloads") };
+});
 
 async function showManualUpdateDialog(mainWindow, version, reason) {
   try {
@@ -329,7 +414,10 @@ function createWindow() {
     title: "Dockyard S3 Studio",
     autoHideMenuBar: true,
     webPreferences: {
-      additionalArguments: [`--dockyard-api-token=${apiSessionToken}`],
+      additionalArguments: [
+        `--dockyard-api-token=${apiSessionToken}`,
+        `--dockyard-app-version=${app.getVersion()}`,
+      ],
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,

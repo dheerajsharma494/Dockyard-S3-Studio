@@ -1,4 +1,4 @@
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
 function getApiToken() {
   const tokenArg = process.argv.find((value) =>
@@ -10,6 +10,18 @@ function getApiToken() {
   }
 
   return process.env.DOCKYARD_API_TOKEN || "";
+}
+
+function getAppVersion() {
+  const versionArg = process.argv.find((value) =>
+    value.startsWith("--dockyard-app-version="),
+  );
+
+  if (versionArg) {
+    return versionArg.slice("--dockyard-app-version=".length);
+  }
+
+  return process.env.npm_package_version || "";
 }
 
 function shouldAuthorizeRequest(resource) {
@@ -114,4 +126,9 @@ if (apiToken && typeof window !== "undefined") {
 
 contextBridge.exposeInMainWorld("dockyardDesktop", {
   isDesktop: true,
+  version: getAppVersion(),
+  downloadFile: (url, filename) =>
+    ipcRenderer.invoke("dockyard:download-file", { url, filename }),
+  saveFile: (filename, bytes) =>
+    ipcRenderer.invoke("dockyard:save-file", { filename, bytes }),
 });

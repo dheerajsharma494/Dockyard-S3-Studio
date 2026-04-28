@@ -21,6 +21,7 @@ export default function BucketList({
   const [pinnedBuckets, setPinnedBuckets] = useState([]);
   const [showOtherBuckets, setShowOtherBuckets] = useState(false);
   const [isRefreshingBuckets, setIsRefreshingBuckets] = useState(false);
+  const [desktopVersion, setDesktopVersion] = useState("");
 
   const PINNED_BUCKETS_KEY = "dockyard:pinnedBuckets";
 
@@ -44,6 +45,11 @@ export default function BucketList({
 
   useEffect(() => {
     loadConnections().then(() => loadBuckets());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setDesktopVersion(window.dockyardDesktop?.version || "");
   }, []);
 
   useEffect(() => {
@@ -220,7 +226,7 @@ export default function BucketList({
             {!isCollapsed && (
               <span>
                 <span className="name" style={{ display: "block" }}>Dockyard S3 Studio</span>
-                <span className="tag">Object Workspace</span>
+                <span className="tag">Object Workspace{desktopVersion ? ` • v${desktopVersion}` : ""}</span>
               </span>
             )}
           </div>
