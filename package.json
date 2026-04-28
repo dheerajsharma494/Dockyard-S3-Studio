@@ -1,6 +1,6 @@
 {
   "name": "localstack-s3-explorer",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Dockyard S3 Studio desktop app",
   "author": "Dockyard S3 Studio",
   "license": "MIT",
